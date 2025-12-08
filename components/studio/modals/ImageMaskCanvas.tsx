@@ -110,8 +110,8 @@ export const ImageMaskCanvas = React.forwardRef<ImageMaskCanvasHandle, ImageMask
             ctx.lineCap = 'round'
             ctx.lineJoin = 'round'
             ctx.lineWidth = 10
-            // Transparent Yellow for UI feedback
-            ctx.strokeStyle = 'rgba(255, 230, 0, 0.4)'
+            // Opaque Yellow for solid mask (alpha accumulation prevented)
+            ctx.strokeStyle = '#FFE600'
         }
 
         const draw = (e: React.MouseEvent | React.TouchEvent) => {
@@ -157,14 +157,16 @@ export const ImageMaskCanvas = React.forwardRef<ImageMaskCanvasHandle, ImageMask
             <div ref={containerRef} className="relative w-full h-full flex items-center justify-center bg-black/5 rounded-md overflow-hidden group">
                 {/* Base Image */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                    ref={imageRef}
-                    crossOrigin="anonymous"
-                    src={imageSrc}
-                    alt="Analysis Target"
-                    className="max-w-full max-h-full object-contain select-none pointer-events-none z-0"
-                    onLoad={handleImageLoad}
-                />
+                {imageSrc && (
+                    <img
+                        ref={imageRef}
+                        crossOrigin="anonymous"
+                        src={imageSrc}
+                        alt="Analysis Target"
+                        className="max-w-full max-h-full object-contain select-none pointer-events-none z-0"
+                        onLoad={handleImageLoad}
+                    />
+                )}
 
                 {/* Dimming Layer */}
                 <div className={`absolute inset-0 bg-black/60 z-10 pointer-events-none transition-opacity duration-300 ${isDrawingEnabled ? 'opacity-100' : 'opacity-0'}`} />
@@ -172,7 +174,7 @@ export const ImageMaskCanvas = React.forwardRef<ImageMaskCanvasHandle, ImageMask
                 {/* Canvas Overlay */}
                 <canvas
                     ref={canvasRef}
-                    className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 touch-none z-20 ${isDrawingEnabled ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                    className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 touch-none z-20 opacity-40 ${isDrawingEnabled ? 'cursor-crosshair' : 'pointer-events-none'}`}
                     width={dimensions.width}
                     height={dimensions.height}
                     onMouseDown={startDrawing}
