@@ -10,17 +10,56 @@ import { cn } from "@/lib/utils"
 
 // Taxonomy Definition
 export const TAXONOMY = {
+    "Essentials": [
+        "Lighting", "Mood", "Color Palette", "Medium", "Perspective"
+    ],
     "Cinematography": [
-        "Lighting", "Camera Angle", "Lens", "Framing", "Depth of Field", "Film Stock", "Focus", "Shutter Speed"
+        "Lighting", "Camera Angle", "Lens", "Framing", "Depth of Field", "Film Stock", "Focus", "Shutter Speed",
+        "ISO", "Aspect Ratio", "Camera Movement", "Shot Type", "Exposure", "Color Grading", "Grain", "Bokeh",
+        "Lens Flare", "Vignette", "Chromatic Aberration"
     ],
     "Art Style": [
-        "Medium", "Palette", "Texture", "Brushwork", "Line Weight", "Rendering", "Surrealism", "Abstraction"
+        "Medium", "Palette", "Texture", "Brushwork", "Line Weight", "Rendering", "Surrealism", "Abstraction",
+        "Digital Art", "Oil Painting", "Watercolor", "Sketch", "3D Render", "Anime", "Pixel Art", "Pop Art",
+        "Impressionism", "Realism", "Minimalism", "Cyberpunk", "Steampunk", "Gothic", "Baroque", "Art Nouveau"
     ],
     "Atmosphere": [
-        "Vibe", "Mood", "Weather", "Time of Day", "Season", "Chaos Level", "Era"
+        "Vibe", "Mood", "Weather", "Time of Day", "Season", "Chaos Level", "Era",
+        "Lighting Quality", "Color Temperature", "Fog/Mist", "Humidity", "Wind", "Temperature",
+        "Ethereal", "Gritty", "Melancholic", "Joyful", "Tense", "Serene"
     ],
     "Subject & Content": [
-        "Main Subject", "Clothing", "Expression", "Pose", "Background", "Architecture", "Props", "Composition"
+        "Main Subject", "Clothing", "Expression", "Pose", "Background", "Architecture", "Props", "Composition",
+        "Crowd", "Vehicle", "Animal", "Plant", "Food", "Technology", "Nature", "Urban",
+        "Interiors", "Exteriors", "Landscapes", "Portraits", "Still Life"
+    ],
+    "Technical": [
+        "Resolution", "Sharpness", "Noise", "Artifacts", "Compression", "Dynamic Range", "Bit Depth",
+        "Contrast Ratio", "White Balance", "Saturation", "Gamma"
+    ],
+    "Composition": [
+        "Rule of Thirds", "Symmetry", "Leading Lines", "Negative Space", "Balance", "Perspective", "Golden Ratio",
+        "Framing", "Scale", "Depth", "Foreground", "Background", "Center Weighted"
+    ],
+    "Color": [
+        "Saturation", "Contrast", "Brightness", "Hue", "Tint", "Shade", "Vibrance", "Color Harmony",
+        "Monochromatic", "Analogous", "Complementary", "Triadic", "Pastel", "Neon", "Muted"
+    ],
+    "Character": [
+        "Age", "Gender", "Ethnicity", "Hair Style", "Eye Color", "Body Type", "Accessories", "Makeup",
+        "Costume", "Emotion", "Action", "Interaction"
+    ],
+    "Adjectives": [
+        "Detailed", "Intricate", "Massive", "Tiny", "Glowing", "Dark", "Bright", "Colorful",
+        "Monochrome", "Vintage", "Modern", "Futuristic", "Ancient", "Organic", "Geometric",
+        "Abstract", "Realistic", "Stylized", "Rough", "Smooth", "Sharp", "Blurry", "Dynamic",
+        "Static", "Chaotic", "Ordered", "Elegant", "Grotesque", "Minimalist", "Ornate"
+    ],
+    "Concept Art": [
+        "Character Design", "Environment Design", "Prop Design", "Vehicle Design", "Creature Design",
+        "Weapon Design", "Mech Design", "Architecture Design", "Industrial Design", "Fashion Design",
+        "Keyframe", "Storyboard", "Moodboard", "Turnaround", "Orthographic", "Isometric",
+        "Cutaway", "Exploded View", "Thumbnail", "Silhouette", "Speedpaint"
     ]
 }
 
@@ -102,9 +141,9 @@ export function TaxonomyPicker({ isOpen, onClose, onAdd, alreadySelected }: Taxo
                 </DialogHeader>
 
                 <div className="flex-1 overflow-y-auto p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <div className="columns-1 md:columns-2 lg:columns-4 gap-8 block">
                         {Object.entries(filteredTaxonomy).map(([category, items]) => (
-                            <div key={category} className="flex flex-col gap-3">
+                            <div key={category} className="break-inside-avoid flex flex-col gap-3 mb-8">
                                 <h4 className="font-semibold text-sm text-foreground/80 border-b pb-2">{category}</h4>
                                 <div className="flex flex-col gap-2">
                                     {items.map(label => {

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Trash, Plus, Play, Pencil, Sparkles, X, Loader2 } from "lucide-react"
+import { Trash, Plus, Play, Pencil, Sparkles, X, Loader2, FileText } from "lucide-react"
 
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
@@ -38,14 +38,15 @@ interface LabEditorProps {
     availableVariables?: AvailableVariable[]
     onAddVariable?: (blockIndex: number, token: string) => void
     onResolveToken?: (token: string) => string
-    mode?: 'text' | 'json'
-    onModeChange?: (mode: 'text' | 'json') => void
+    mode?: 'text' | 'json' | 'markdown'
+    onModeChange?: (mode: 'text' | 'json' | 'markdown') => void
+    onLoadTemplate?: (template: 'universal' | 'markdown' | 'json') => void
     generatingNodeId?: string | null
     generatingBlockId?: string | null
 }
 
 export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
-    ({ value, onChange, onGenerateBlock, onAssemble, availableVariables = [], onAddVariable, onResolveToken, mode, onModeChange, generatingNodeId, generatingBlockId }, ref) => {
+    ({ value, onChange, onGenerateBlock, onAssemble, availableVariables = [], onAddVariable, onResolveToken, mode, onModeChange, onLoadTemplate, generatingNodeId, generatingBlockId }, ref) => {
         // Text Mode State
         const [activeBlockIndex, setActiveBlockIndex] = React.useState<number | null>(null)
         const [activeInputType, setActiveInputType] = React.useState<'variable' | 'instruction' | null>(null)
@@ -150,8 +151,15 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
         }))
 
         const handleTemplateChange = (template: string) => {
+            if (onLoadTemplate) {
+                onLoadTemplate(template as 'universal' | 'markdown' | 'json')
+                return
+            }
+
             if (template === "universal") {
                 onModeChange?.('text')
+            } else if (template === "markdown") {
+                onModeChange?.('markdown')
             } else if (template === "json") {
                 onModeChange?.('json')
             }
@@ -251,7 +259,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                 <div className="flex items-center justify-between shrink-0">
                     <h2 className="text-lg font-semibold">Prompt Construction</h2>
                     <Select
-                        value={(mode || value.mode) === 'text' ? 'universal' : 'json'}
+                        value={(mode || value.mode) === 'text' ? 'universal' : (mode === 'markdown' ? 'markdown' : 'json')}
                         onValueChange={handleTemplateChange}
                     >
                         <SelectTrigger className="w-[200px]">
@@ -259,6 +267,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="universal">Universal Text</SelectItem>
+                            <SelectItem value="markdown">Structured Markdown</SelectItem>
                             <SelectItem value="json">Structured JSON</SelectItem>
                         </SelectContent>
                     </Select>
@@ -278,7 +287,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                             <>
                                 {value.blocks.map((block, index) => (
                                     // ... Existing Block Rendering ...
-                                    <div key={block.id} className="p-4 border rounded-md bg-card space-y-3 relative group">
+                                    <div key={block.id} className={cn("p-4 border rounded-md bg-card space-y-3 relative group", mode === 'markdown' && "border-l-4 border-l-blue-500")}>
                                         <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                             <Button
                                                 variant="ghost"
@@ -327,7 +336,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                                                     {block.sources.map(source => (
                                                         <div key={source.id} className="flex gap-2 items-start">
                                                             <Input
-                                                                placeholder="Label (e.g., Colors)"
+                                                                placeholder={mode === 'markdown' ? "Section Header (e.g. {{subject}})" : "Label (e.g., Colors)"}
                                                                 className="font-mono text-sm w-1/3"
                                                                 value={source.label}
                                                                 onChange={(e) => handleSourceChange(index, source.id, 'label', e.target.value)}
@@ -383,7 +392,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                                                     <label className="text-xs text-muted-foreground font-medium">Instruction / How to Transform</label>
                                                     <Textarea
                                                         ref={el => { instructionRefs.current[index] = el }}
-                                                        placeholder="E.g., Describe these colors poetically..."
+                                                        placeholder={mode === 'markdown' ? "Content rules (e.g. Use bullet points)" : "E.g., Describe these colors poetically..."}
                                                         className="font-mono text-sm h-20 resize-y"
                                                         value={block.instruction}
                                                         onChange={(e) => handleInstructionChange(index, e.target.value)}
@@ -416,12 +425,16 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                                         Add Text Block
                                     </Button>
                                     <Button
-                                        className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                                        className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer"
                                         onClick={onAssemble}
-                                        disabled={value.blocks.some(b => !b.generatedOutput)}
+                                        disabled={!value.blocks.some(b => b.generatedOutput)}
                                     >
-                                        <Sparkles className="h-4 w-4" />
-                                        Assemble Final Paragraph
+                                        {mode === 'markdown' ? (
+                                            <FileText className="h-4 w-4" />
+                                        ) : (
+                                            <Sparkles className="h-4 w-4" />
+                                        )}
+                                        {mode === 'markdown' ? "Compile Document" : "Assemble Final Paragraph"}
                                     </Button>
                                 </div>
                             </>

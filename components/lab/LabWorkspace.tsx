@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Copy, FileCode, FlaskConical, GripVertical, ArrowLeft, Check } from "lucide-react"
+import { Copy, FileCode, FlaskConical, GripVertical, ArrowLeft, Check, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +21,8 @@ import { LabEditor, LabEditorHandle } from "@/components/lab/LabEditor"
 import { EditorState, AvailableVariable, VariableSource, JsonNode, Block } from "@/components/lab/types"
 import { useStudioStore } from "@/stores/useStudioStore"
 import { compileString } from "@/utils/promptCompiler"
-import { generateSegment, assembleParagraph } from "@/utils/labGenerator"
+import { generateSegment, assembleParagraph, assembleMarkdown } from "@/utils/labGenerator"
+import { MARKDOWN_TEMPLATE_BLOCKS, MOCK_MARKDOWN_PREVIEW, UNIVERSAL_TEMPLATE_BLOCKS, MOCK_UNIVERSAL_PREVIEW } from "./templates"
 
 // --- Helpers ---
 
@@ -71,6 +72,7 @@ export function LabWorkspace() {
     const {
         labMode, setLabMode,
         labTextBlocks, setLabTextBlocks,
+        labMarkdownBlocks, setLabMarkdownBlocks,
         labJsonNodes, setLabJsonNodes
     } = useStudioStore()
 
@@ -78,20 +80,72 @@ export function LabWorkspace() {
     const editorContent: EditorState = React.useMemo(() => {
         if (labMode === 'text') {
             return { mode: 'text', blocks: labTextBlocks }
+        } else if (labMode === 'markdown') {
+            return { mode: 'text', blocks: labMarkdownBlocks }
         } else {
             return { mode: 'json', nodes: labJsonNodes }
         }
-    }, [labMode, labTextBlocks, labJsonNodes])
+    }, [labMode, labTextBlocks, labMarkdownBlocks, labJsonNodes])
+
+    const handleLoadTemplate = (template: 'universal' | 'markdown' | 'json') => {
+        if (template === 'universal') {
+            setLabMode('text')
+            setLabTextBlocks(UNIVERSAL_TEMPLATE_BLOCKS)
+            setAssembledOutput(MOCK_UNIVERSAL_PREVIEW)
+            localStorage.setItem('lab_output_text', MOCK_UNIVERSAL_PREVIEW)
+        } else if (template === 'markdown') {
+            setLabMode('markdown')
+            // Only load template if blocks are empty or user explicitly requested via this action
+            // Since this is triggered by "Load Template", we should load it.
+            // But we might want to check if it's already populated? 
+            // The user request implies loading mock data.
+            setLabMarkdownBlocks(MARKDOWN_TEMPLATE_BLOCKS)
+            setAssembledOutput(MOCK_MARKDOWN_PREVIEW)
+            localStorage.setItem('lab_output_markdown', MOCK_MARKDOWN_PREVIEW)
+        } else if (template === 'json') {
+            setLabMode('json')
+        }
+    }
 
     const handleEditorChange = (newValue: EditorState) => {
         if (newValue.mode === 'text') {
-            setLabTextBlocks(newValue.blocks)
+            if (labMode === 'text') {
+                setLabTextBlocks(newValue.blocks)
+            } else if (labMode === 'markdown') {
+                setLabMarkdownBlocks(newValue.blocks)
+            }
         } else {
             setLabJsonNodes(newValue.nodes)
         }
     }
 
     const [assembledOutput, setAssembledOutput] = React.useState<string>("")
+    const lastLoadedMode = React.useRef<string | null>(null)
+
+    // Load persisted output when mode changes
+    React.useEffect(() => {
+        if (labMode === 'text' || labMode === 'markdown') {
+            const key = labMode === 'markdown' ? 'lab_output_markdown' : 'lab_output_text'
+            const saved = localStorage.getItem(key)
+            if (saved !== null) {
+                setAssembledOutput(saved)
+            } else {
+                setAssembledOutput("")
+            }
+        } else {
+            setAssembledOutput("")
+        }
+        lastLoadedMode.current = labMode
+    }, [labMode])
+
+    // Persist output when it changes
+    React.useEffect(() => {
+        if ((labMode === 'text' || labMode === 'markdown') && lastLoadedMode.current === labMode) {
+            const key = labMode === 'markdown' ? 'lab_output_markdown' : 'lab_output_text'
+            localStorage.setItem(key, assembledOutput)
+        }
+    }, [assembledOutput, labMode])
+
     const [generatingNodeId, setGeneratingNodeId] = React.useState<string | null>(null)
     const [generatingBlockId, setGeneratingBlockId] = React.useState<string | null>(null)
     const [isAssembling, setIsAssembling] = React.useState(false)
@@ -219,7 +273,7 @@ export function LabWorkspace() {
 
     // Handler for adding a variable from dropdown
     const handleAddVariable = React.useCallback((blockIndex: number, token: string) => {
-        if (labMode !== 'text') return
+        if (labMode !== 'text' && labMode !== 'markdown') return
 
         // Parse token to get label
         const cleanToken = token.replace(/^\{\{|\}\}$/g, '').trim()
@@ -232,14 +286,23 @@ export function LabWorkspace() {
             content
         }
 
-        const newBlocks = [...labTextBlocks]
+        const blocks = labMode === 'text' ? labTextBlocks : labMarkdownBlocks
+        const newBlocks = [...blocks]
         const block = newBlocks[blockIndex]
+        
+        if (!block) return
+
         newBlocks[blockIndex] = {
             ...block,
             sources: [...block.sources, newSource]
         }
-        setLabTextBlocks(newBlocks)
-    }, [labMode, labTextBlocks, resolveTokenData, setLabTextBlocks])
+
+        if (labMode === 'text') {
+            setLabTextBlocks(newBlocks)
+        } else {
+            setLabMarkdownBlocks(newBlocks)
+        }
+    }, [labMode, labTextBlocks, labMarkdownBlocks, resolveTokenData, setLabTextBlocks, setLabMarkdownBlocks])
 
     const handleGenerateBlock = async (idOrIndex: string | number) => {
         const isJsonMode = labMode === 'json'
@@ -248,8 +311,9 @@ export function LabWorkspace() {
             setGeneratingNodeId(idOrIndex.toString())
         } else {
             // Text Mode - idOrIndex is index (number)
-            if (typeof idOrIndex === 'number' && labTextBlocks[idOrIndex]) {
-                setGeneratingBlockId(labTextBlocks[idOrIndex].id)
+            const blocks = labMode === 'text' ? labTextBlocks : labMarkdownBlocks
+            if (typeof idOrIndex === 'number' && blocks[idOrIndex]) {
+                setGeneratingBlockId(blocks[idOrIndex].id)
             }
         }
 
@@ -289,7 +353,8 @@ export function LabWorkspace() {
                 // Text Mode
                 if (typeof idOrIndex !== 'number') return
                 const index = idOrIndex
-                const block = labTextBlocks[index]
+                const blocks = labMode === 'text' ? labTextBlocks : labMarkdownBlocks
+                const block = blocks[index]
                 if (!block) return
 
                 // Pass structured sources to API
@@ -298,9 +363,14 @@ export function LabWorkspace() {
                 // Call API to generate segment
                 const result = await generateSegment(variables, block.instruction)
 
-                const newBlocks = [...labTextBlocks]
+                const newBlocks = [...blocks]
                 newBlocks[index] = { ...newBlocks[index], generatedOutput: result }
-                setLabTextBlocks(newBlocks)
+                
+                if (labMode === 'text') {
+                    setLabTextBlocks(newBlocks)
+                } else {
+                    setLabMarkdownBlocks(newBlocks)
+                }
             }
         } catch (error) {
             console.error('Generation error:', error)
@@ -312,10 +382,11 @@ export function LabWorkspace() {
     }
 
     const handleAssemble = async () => {
-        if (labMode === 'text') {
+        if (labMode === 'text' || labMode === 'markdown') {
             setIsAssembling(true)
             try {
-                const segments = labTextBlocks
+                const blocks = labMode === 'text' ? labTextBlocks : labMarkdownBlocks
+                const segments = blocks
                     .map(b => b.generatedOutput)
                     .filter(Boolean) as string[]
 
@@ -324,12 +395,17 @@ export function LabWorkspace() {
                     return
                 }
 
-                // Call API to assemble paragraph
-                const result = await assembleParagraph(segments)
+                // Call API to assemble paragraph or markdown
+                let result = ""
+                if (labMode === 'markdown') {
+                    result = await assembleMarkdown(segments, store.settings)
+                } else {
+                    result = await assembleParagraph(segments)
+                }
                 setAssembledOutput(result)
             } catch (error) {
                 console.error('Assembly error:', error)
-                alert('Failed to assemble paragraph. Check console for details.')
+                alert('Failed to assemble. Check console for details.')
             } finally {
                 setIsAssembling(false)
             }
@@ -341,16 +417,15 @@ export function LabWorkspace() {
     // Unified Reactive Preview
     const previewContent = React.useMemo(() => {
         if (labMode === 'text') {
-            return labTextBlocks
-                .filter(b => b.generatedOutput)
-                .map(b => b.generatedOutput)
-                .join('\n\n')
+            return assembledOutput
+        } else if (labMode === 'markdown') {
+            return assembledOutput
         } else {
             // JSON Mode: Treat root nodes as Object fields
             const rootObj = buildPreview(labJsonNodes, false)
             return JSON.stringify(rootObj, null, 2)
         }
-    }, [labMode, labTextBlocks, labJsonNodes])
+    }, [labMode, labTextBlocks, labMarkdownBlocks, labJsonNodes, assembledOutput])
 
     const handleCopy = () => {
         if (!previewContent) return
@@ -378,7 +453,7 @@ export function LabWorkspace() {
                     <LabInventory onInsert={(token) => {
                         // In text mode, add as a new variable source with resolved data
                         // In JSON mode, insert the token into the active field
-                        if (labMode === 'text') {
+                        if (labMode === 'text' || labMode === 'markdown') {
                             // Parse token to get label (e.g., "Colors" from "{{colors}}")
                             const cleanToken = token.replace(/^\{\{|\}\}$/g, '').trim()
                             const label = cleanToken.charAt(0).toUpperCase() + cleanToken.slice(1).replace(/_/g, ' ')
@@ -400,7 +475,11 @@ export function LabWorkspace() {
                                     instruction: '',
                                     generatedOutput: null
                                 }
-                                setLabTextBlocks([...labTextBlocks, newBlock])
+                                if (labMode === 'text') {
+                                    setLabTextBlocks([...labTextBlocks, newBlock])
+                                } else {
+                                    setLabMarkdownBlocks([...labMarkdownBlocks, newBlock])
+                                }
                             }
                         } else {
                             editorRef.current?.insertToken(token)
@@ -421,6 +500,7 @@ export function LabWorkspace() {
                         onResolveToken={resolveTokenData}
                         mode={labMode}
                         onModeChange={setLabMode}
+                        onLoadTemplate={handleLoadTemplate}
                         generatingNodeId={generatingNodeId}
                         generatingBlockId={generatingBlockId}
                     />
@@ -434,7 +514,14 @@ export function LabWorkspace() {
                     </div>
 
                     <div className="flex-1 rounded-md border bg-muted/50 p-4 font-mono text-xs overflow-auto whitespace-pre-wrap text-muted-foreground">
-                        {previewContent || "// Generate content to see preview..."}
+                        {isAssembling ? (
+                            <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                <span className="animate-pulse">Generating final result...</span>
+                            </div>
+                        ) : (
+                            previewContent || "// Generate content to see preview..."
+                        )}
                     </div>
 
                     <Button

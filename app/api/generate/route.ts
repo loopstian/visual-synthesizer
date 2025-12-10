@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
         } else if (task === 'assembly') {
             // Lab: Combine multiple segments into a cohesive paragraph
-            const { segments } = body;
+            const { segments, outputFormat } = body;
 
             if (!segments || !Array.isArray(segments) || segments.length === 0) {
                 return NextResponse.json(
@@ -46,8 +46,18 @@ export async function POST(req: Request) {
                 );
             }
 
-            systemPrompt = systemOverride || "You are an expert prompt engineer. Combine these disjointed text blocks into a single, fluid, cohesive paragraph for an image generator. Preserve the details, fix the grammar/flow.";
-            userPrompt = `Blocks:\n${segments.join('\n')}\n\nCombine this into one paragraph.`;
+            if (outputFormat === 'markdown') {
+                 systemPrompt = systemOverride || "You are a technical documentation expert. Organize these text blocks into a clean Markdown document. Use H2/H3 Headers for main concepts, Bullet Points for details, and Bold text for keywords. Do not just write a paragraph.";
+            } else {
+                 systemPrompt = systemOverride || "You are an expert prompt engineer. Combine these disjointed text blocks into a single, fluid, cohesive paragraph for an image generator. Preserve the details, fix the grammar/flow.";
+            }
+
+            // Construct User Prompt based on System Prompt intent
+            if (systemPrompt.includes('Markdown')) {
+                 userPrompt = `Here are the document sections:\n${segments.join('\n\n')}\n\nFormat this into a clean Markdown document.`;
+            } else {
+                 userPrompt = `Blocks:\n${segments.join('\n')}\n\nCombine this into one paragraph.`;
+            }
 
         } else if (task === 'master_prompt') {
             // Studio: Generate master prompt from subject, keywords, and components

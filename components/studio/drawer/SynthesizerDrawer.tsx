@@ -76,6 +76,9 @@ export function SynthesizerDrawer() {
                             }
                             values.forEach(v => aggregation[flatKey].add(v))
                         } else {
+                            // Skip Subject as it has its own dedicated input field
+                            if (key === 'Subject') return
+
                             if (!aggregation[key]) {
                                 aggregation[key] = new Set()
                             }

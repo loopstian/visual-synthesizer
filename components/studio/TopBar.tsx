@@ -17,7 +17,7 @@ interface TopBarProps {
     isUploading?: boolean
 }
 
-export function TopBar({ projectName, viewMode, componentName, className, onNewComponent, onUpload, onBack, isUploading }: TopBarProps) {
+export function TopBar({ projectName, viewMode, componentName, className, onNewComponent, onUpload, onBack, isUploading, children }: TopBarProps & { children?: React.ReactNode }) {
     return (
         <div className={cn("flex h-14 w-full items-center justify-between border-b bg-background px-4", className)}>
             {/* Left: Breadcrumbs */}
@@ -41,6 +41,7 @@ export function TopBar({ projectName, viewMode, componentName, className, onNewC
 
             {/* Right: Actions */}
             <div className="flex items-center gap-2">
+                {children}
                 {viewMode === "main" && (
                     <Button variant="outline" size="sm" className="gap-2" onClick={onNewComponent}>
                         <FolderPlus className="h-4 w-4" />

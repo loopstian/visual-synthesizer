@@ -7,7 +7,15 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { uploadImage, deleteImageFromStorage } from "@/utils/uploadManager"
+import { getImageDimensions } from "@/utils/imageHelpers"
 // Import new studio components
 import { TopBar } from "@/components/studio/TopBar"
 import { EmptyState } from "@/components/studio/EmptyState"
@@ -23,6 +31,8 @@ export function ImageStudio() {
 
     // Store State
     const {
+        projects,
+        currentProjectId,
         assets,
         components,
         viewMode,
@@ -35,11 +45,15 @@ export function ImageStudio() {
         deleteAsset
     } = useStudioStore()
 
+    const currentProject = projects.find(p => p.id === currentProjectId)
+    const projectName = currentProject?.name || "Untitled Project"
+
     // UI Local State
     const [selectedAsset, setSelectedAsset] = React.useState<Asset | null>(null)
     const [isAnalyzing, setIsAnalyzing] = React.useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false)
     const [isUploading, setIsUploading] = React.useState(false)
+    const [filter, setFilter] = React.useState<'all' | 'analyzed' | 'not-analyzed'>('all')
 
     // State for Multi-Tone Analysis
     const [extractionGroups, setExtractionGroups] = React.useState<Array<{ id: string, tone: string, targets: string[] }>>([
@@ -225,7 +239,7 @@ export function ImageStudio() {
                 {/* Header */}
                 <div className="flex items-center justify-between border-b bg-background">
                     <TopBar
-                        projectName="Project Alpha"
+                        projectName={projectName}
                         viewMode={viewMode}
                         componentName={activeComponentId ? components.find(c => c.id === activeComponentId)?.name : undefined}
                         className="border-b-0 flex-1"
@@ -233,7 +247,18 @@ export function ImageStudio() {
                         onNewComponent={() => setIsCreateModalOpen(true)}
                         onBack={handleBackToMain}
                         isUploading={isUploading}
-                    />
+                    >
+                        <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+                            <SelectTrigger className="w-[130px] h-8 text-xs">
+                                <SelectValue placeholder="Filter" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Images</SelectItem>
+                                <SelectItem value="analyzed">Analyzed</SelectItem>
+                                <SelectItem value="not-analyzed">Not Analyzed</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </TopBar>
                 </div>
 
                 {/* Grid Area */}
@@ -243,13 +268,13 @@ export function ImageStudio() {
                             <EmptyState />
                         </div>
                     ) : (
-                        <div className="grid grid-cols-3 lg:grid-cols-4 gap-4 pb-10">
+                        <div className="columns-2 md:columns-3 lg:columns-4 gap-4 space-y-4 pb-10 block">
                             {/* Render Components (Folders) only in Main View */}
                             {viewMode === "main" && components.map((comp) => (
                                 <div key={comp.id} onClick={() => {
                                     setActiveComponent(comp.id)
                                     setViewMode("component")
-                                }}>
+                                }} className="break-inside-avoid mb-4">
                                     <ComponentCard name={comp.name} count={assets.filter(a => a.componentId === comp.id).length} />
                                 </div>
                             ))}
@@ -257,12 +282,18 @@ export function ImageStudio() {
                             {/* Render Assets */}
                             {assets
                                 .filter(asset => {
-                                    if (viewMode === "main") return !asset.componentId
-                                    if (viewMode === "component") return asset.componentId === activeComponentId
+                                    // View Mode Filtering
+                                    if (viewMode === "main" && asset.componentId) return false
+                                    if (viewMode === "component" && asset.componentId !== activeComponentId) return false
+                                    
+                                    // Status Filtering
+                                    if (filter === 'analyzed' && !asset.analyzed) return false
+                                    if (filter === 'not-analyzed' && asset.analyzed) return false
+                                    
                                     return true
                                 })
                                 .map((asset) => (
-                                    <div key={asset.id} onClick={() => setSelectedAsset(asset)}>
+                                    <div key={asset.id} onClick={() => setSelectedAsset(asset)} className="break-inside-avoid mb-4">
                                         <AssetCard
                                             imageSrc={asset.url}
                                             analyzed={asset.analyzed}

@@ -1,4 +1,4 @@
-import { useStudioStore } from "@/stores/useStudioStore";
+import { useStudioStore, SystemSettings, DEFAULT_SYSTEM_SETTINGS } from "@/stores/useStudioStore";
 
 export type VariableSource = {
     label: string;
@@ -23,7 +23,7 @@ export async function generateSegment(variables: VariableSource[], instruction: 
                 variables,
                 instruction,
                 contextKey,
-                systemOverride: settings.segmentWriterPrompt
+                systemOverride: settings.segmentWriterPrompt || DEFAULT_SYSTEM_SETTINGS.segmentWriterPrompt
             })
         });
 
@@ -54,7 +54,38 @@ export async function assembleParagraph(segments: string[]): Promise<string> {
             body: JSON.stringify({
                 task: 'assembly',
                 segments,
-                systemOverride: settings.assemblerPrompt
+                systemOverride: settings.assemblerPrompt || DEFAULT_SYSTEM_SETTINGS.assemblerPrompt
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Assembly failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.prompt || '';
+    } catch (error) {
+        console.error('Assembly error:', error);
+        throw error;
+    }
+}
+
+/**
+ * Assembles multiple text segments into a structured Markdown document.
+ * @param segments Array of text segments to combine
+ * @param settings System settings containing the markdown assembler prompt
+ * @returns The assembled markdown
+ */
+export async function assembleMarkdown(segments: string[], settings: SystemSettings): Promise<string> {
+    try {
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                task: 'assembly',
+                outputFormat: 'markdown',
+                segments,
+                systemOverride: settings.markdownAssemblerPrompt || DEFAULT_SYSTEM_SETTINGS.markdownAssemblerPrompt
             })
         });
 

@@ -40,3 +40,21 @@ export const urlToBlob = async (url: string): Promise<Blob> => {
         throw error;
     }
 };
+
+/**
+ * Gets the dimensions and aspect ratio of an image from a URL.
+ */
+export const getImageDimensions = (url: string): Promise<{ width: number; height: number; aspectRatio: number }> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            resolve({
+                width: img.naturalWidth,
+                height: img.naturalHeight,
+                aspectRatio: img.naturalWidth / img.naturalHeight
+            });
+        };
+        img.onerror = (error) => reject(error);
+        img.src = url;
+    });
+};

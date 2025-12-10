@@ -16,7 +16,8 @@ export function LabInventory({ onInsert }: LabInventoryProps) {
     const { assets, components } = useStudioStore()
 
     const variables = React.useMemo(() => {
-        const core = ['{{main_subject}}']
+               const core = ['{{main_subject}}']
+
 
         // Filter components: Only show if they have a non-empty generated prompt
         const componentVars = components
@@ -53,7 +54,7 @@ export function LabInventory({ onInsert }: LabInventoryProps) {
 
         // Only include global keys that have active extracted values
         const globals = Object.entries(aggregation)
-            .filter(([_, set]) => set.size > 0)
+            .filter(([key, set]) => set.size > 0 && key !== 'Subject')
             .map(([key]) => `{{${key.toLowerCase().replace(/\s+/g, '_')}}}`)
 
         return { core, components: componentVars, globals }

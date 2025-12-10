@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Image as ImageIcon, Video as VideoIcon, Settings, User, BookOpen } from "lucide-react"
+import { Image as ImageIcon, Video as VideoIcon, Settings, User, BookOpen, LayoutGrid } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -11,8 +11,10 @@ import { ImageStudio } from "@/components/studios/ImageStudio"
 import { VideoStudio } from "@/components/studios/VideoStudio"
 
 import { usePathname, useRouter } from "next/navigation"
+import { useStudioStore } from "@/stores/useStudioStore"
 
 export function StudioShell({ children }: { children?: React.ReactNode }) {
+    const { currentProjectId } = useStudioStore()
     const [activeStudio, setActiveStudio] = React.useState<"image" | "video">("image")
     const pathname = usePathname()
     const router = useRouter()
@@ -36,29 +38,55 @@ export function StudioShell({ children }: { children?: React.ReactNode }) {
 
                 {/* Center: Logic Nav */}
                 <div className="flex flex-col gap-2 flex-1 w-full px-2">
-                    <Button
-                        variant={(!isSettings && !isGuide && activeStudio === "image") ? "secondary" : "ghost"}
-                        size="icon"
-                        className={cn(
-                            "w-full h-12 rounded-xl transition-all",
-                            !isSettings && !isGuide && activeStudio === "image" && "bg-primary text-primary-foreground shadow-md"
-                        )}
-                        onClick={() => handleStudioChange("image")}
-                    >
-                        <ImageIcon className="h-5 w-5" />
-                    </Button>
+                    <Link href="/dashboard">
+                        <Button
+                            variant={pathname === '/dashboard' ? "secondary" : "ghost"}
+                            size="icon"
+                            className={cn(
+                                "w-full h-12 rounded-xl transition-all",
+                                pathname === '/dashboard' && "bg-primary text-primary-foreground shadow-md"
+                            )}
+                            title="Dashboard"
+                        >
+                            <LayoutGrid className="h-5 w-5" />
+                        </Button>
+                    </Link>
 
-                    <Button
-                        variant={(!isSettings && !isGuide && activeStudio === "video") ? "secondary" : "ghost"}
-                        size="icon"
-                        className={cn(
-                            "w-full h-12 rounded-xl transition-all",
-                            !isSettings && !isGuide && activeStudio === "video" && "bg-primary text-primary-foreground shadow-md"
-                        )}
-                        onClick={() => handleStudioChange("video")}
-                    >
-                        <VideoIcon className="h-5 w-5" />
-                    </Button>
+                    {currentProjectId && pathname !== '/dashboard' && (
+                        <>
+                            <div className="h-px bg-border my-2 mx-2" />
+
+                            <Button
+                                variant={(!isSettings && !isGuide && pathname !== '/dashboard' && activeStudio === "image") ? "secondary" : "ghost"}
+                                size="icon"
+                                className={cn(
+                                    "w-full h-12 rounded-xl transition-all",
+                                    !isSettings && !isGuide && pathname !== '/dashboard' && activeStudio === "image" && "bg-primary text-primary-foreground shadow-md"
+                                )}
+                                onClick={() => {
+                                    if (pathname === '/dashboard') router.push('/')
+                                    handleStudioChange("image")
+                                }}
+                            >
+                                <ImageIcon className="h-5 w-5" />
+                            </Button>
+
+                            <Button
+                                variant={(!isSettings && !isGuide && pathname !== '/dashboard' && activeStudio === "video") ? "secondary" : "ghost"}
+                                size="icon"
+                                className={cn(
+                                    "w-full h-12 rounded-xl transition-all",
+                                    !isSettings && !isGuide && pathname !== '/dashboard' && activeStudio === "video" && "bg-primary text-primary-foreground shadow-md"
+                                )}
+                                onClick={() => {
+                                    if (pathname === '/dashboard') router.push('/')
+                                    handleStudioChange("video")
+                                }}
+                            >
+                                <VideoIcon className="h-5 w-5" />
+                            </Button>
+                        </>
+                    )}
                 </div>
 
                 {/* Bottom: User & Settings */}

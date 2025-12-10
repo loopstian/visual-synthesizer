@@ -23,11 +23,11 @@ interface AssetCardProps {
 
 export function AssetCard({ imageSrc, analyzed, onDelete, className }: AssetCardProps) {
     return (
-        <div className={cn("group relative aspect-square overflow-hidden rounded-lg border bg-muted", className)}>
+        <div className={cn("group relative overflow-hidden rounded-lg border bg-muted", className)}>
             <img
                 src={imageSrc}
                 alt="Asset"
-                className="h-full w-full object-cover transition-all duration-300 group-hover:scale-105"
+                className="h-auto w-full object-cover transition-all duration-300 group-hover:scale-105"
             />
             {/* Overlay */}
             <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-all duration-300 group-hover:bg-black/40">
