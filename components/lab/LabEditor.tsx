@@ -1,12 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { Trash, Plus, Play, Pencil, Sparkles } from "lucide-react"
+import { Trash, Plus, Play, Pencil, Sparkles, X, Loader2 } from "lucide-react"
 
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 import {
     Select,
     SelectContent,
@@ -14,23 +15,19 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
-import { JsonNode, JsonNodeType } from "./types"
+import { JsonNode, JsonNodeType, VariableSource, AvailableVariable, EditorState, Block } from "./types"
 import { JsonNodeRow } from "./json/JsonNodeRow"
 
-export type Block = {
-    id: string
-    variable: string
-    instruction: string
-    generatedOutput: string | null
-}
-
-export type EditorState =
-    | { mode: 'text', blocks: Block[] }
-    | { mode: 'json', nodes: JsonNode[] }
-
 export interface LabEditorHandle {
-    insertToken: (token: string) => void
+    insertToken: (token: string) => void // Keep for JSON mode
+    addVariableToActiveBlock: (label: string, content: string) => boolean // New for text mode, returns true if added
 }
 
 interface LabEditorProps {
@@ -38,10 +35,17 @@ interface LabEditorProps {
     onChange: (value: EditorState) => void
     onGenerateBlock?: (id: string | number) => void // Text Mode uses index (number), JSON uses ID (string)
     onAssemble?: () => void
+    availableVariables?: AvailableVariable[]
+    onAddVariable?: (blockIndex: number, token: string) => void
+    onResolveToken?: (token: string) => string
+    mode?: 'text' | 'json'
+    onModeChange?: (mode: 'text' | 'json') => void
+    generatingNodeId?: string | null
+    generatingBlockId?: string | null
 }
 
 export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
-    ({ value, onChange, onGenerateBlock, onAssemble }, ref) => {
+    ({ value, onChange, onGenerateBlock, onAssemble, availableVariables = [], onAddVariable, onResolveToken, mode, onModeChange, generatingNodeId, generatingBlockId }, ref) => {
         // Text Mode State
         const [activeBlockIndex, setActiveBlockIndex] = React.useState<number | null>(null)
         const [activeInputType, setActiveInputType] = React.useState<'variable' | 'instruction' | null>(null)
@@ -50,7 +54,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
         const [activeFieldId, setActiveFieldId] = React.useState<string | null>(null)
 
         // Refs
-        const variableRefs = React.useRef<Array<HTMLInputElement | null>>([])
+        const variableRefs = React.useRef<Array<HTMLTextAreaElement | null>>([])
         const instructionRefs = React.useRef<Array<HTMLTextAreaElement | null>>([])
         const fieldMapRefs = React.useRef<Map<string, HTMLTextAreaElement | null>>(new Map())
 
@@ -93,48 +97,8 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
 
         React.useImperativeHandle(ref, () => ({
             insertToken: (token: string) => {
-                if (value.mode === 'text') {
-                    if (activeBlockIndex === null) return
-
-                    if (activeInputType === 'variable') {
-                        const input = variableRefs.current[activeBlockIndex]
-                        if (!input) return
-                        const start = input.selectionStart || 0
-                        const end = input.selectionEnd || 0
-                        const current = value.blocks[activeBlockIndex].variable
-                        const newValue = current.substring(0, start) + token + current.substring(end)
-
-                        const newBlocks = [...value.blocks]
-                        newBlocks[activeBlockIndex] = { ...newBlocks[activeBlockIndex], variable: newValue }
-                        onChange({ ...value, blocks: newBlocks })
-
-                        setTimeout(() => {
-                            const newPos = start + token.length
-                            input.setSelectionRange(newPos, newPos)
-                            input.focus()
-                        }, 0)
-
-                    } else if (activeInputType === 'instruction') {
-                        const textarea = instructionRefs.current[activeBlockIndex]
-                        if (!textarea) return
-                        const start = textarea.selectionStart
-                        const end = textarea.selectionEnd
-                        const current = value.blocks[activeBlockIndex].instruction
-                        const newValue = current.substring(0, start) + token + current.substring(end)
-
-                        const newBlocks = [...value.blocks]
-                        newBlocks[activeBlockIndex] = { ...newBlocks[activeBlockIndex], instruction: newValue }
-                        onChange({ ...value, blocks: newBlocks })
-
-                        setTimeout(() => {
-                            const newPos = start + token.length
-                            textarea.selectionStart = newPos
-                            textarea.selectionEnd = newPos
-                            textarea.focus()
-                        }, 0)
-                    }
-                } else {
-                    // JSON Mode logic
+                // For JSON Mode only - Text Mode now uses addVariableToActiveBlock
+                if (value.mode === 'json') {
                     if (!activeFieldId) return
 
                     const fieldRef = fieldMapRefs.current.get(activeFieldId)
@@ -164,40 +128,32 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                     }, 0)
                 }
             },
+            addVariableToActiveBlock: (label: string, content: string): boolean => {
+                if (value.mode !== 'text') return false
+                if (activeBlockIndex === null) return false
+
+                const newSource: VariableSource = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    label,
+                    content
+                }
+
+                const newBlocks = [...value.blocks]
+                const block = newBlocks[activeBlockIndex]
+                newBlocks[activeBlockIndex] = {
+                    ...block,
+                    sources: [...block.sources, newSource]
+                }
+                onChange({ ...value, blocks: newBlocks })
+                return true
+            }
         }))
 
         const handleTemplateChange = (template: string) => {
             if (template === "universal") {
-                onChange({
-                    mode: 'text',
-                    blocks: [
-                        { id: '1', variable: '{{main_subject}}', instruction: 'Describe the subject in detail.', generatedOutput: null },
-                        { id: '2', variable: '{{vibe}}', instruction: 'Apply this style heavily.', generatedOutput: null }
-                    ]
-                })
+                onModeChange?.('text')
             } else if (template === "json") {
-                onChange({
-                    mode: 'json',
-                    nodes: [
-                        {
-                            id: 'root_subject',
-                            key: "subject",
-                            type: 'string',
-                            instruction: "{{main_subject}}",
-                            children: []
-                        },
-                        {
-                            id: 'root_style',
-                            key: "style",
-                            type: 'array',
-                            instruction: "",
-                            children: [
-                                { id: 'style_1', key: '', type: 'string', instruction: '{{colors}}', children: [] },
-                                { id: 'style_2', key: '', type: 'string', instruction: '{{vibe}}', children: [] }
-                            ]
-                        }
-                    ]
-                })
+                onModeChange?.('json')
             }
         }
 
@@ -208,7 +164,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                     ...value,
                     blocks: [...value.blocks, {
                         id: Math.random().toString(36).substr(2, 9),
-                        variable: '',
+                        sources: [],
                         instruction: '',
                         generatedOutput: null
                     }]
@@ -224,10 +180,46 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
             }
         }
 
-        const handleBlockChange = (index: number, field: 'variable' | 'instruction', text: string) => {
+        const handleSourceChange = (blockIndex: number, sourceId: string, field: 'label' | 'content', text: string) => {
             if (value.mode === 'text') {
                 const newBlocks = [...value.blocks]
-                newBlocks[index] = { ...newBlocks[index], [field]: text }
+                const block = newBlocks[blockIndex]
+                const newSources = block.sources.map(s =>
+                    s.id === sourceId ? { ...s, [field]: text } : s
+                )
+                newBlocks[blockIndex] = { ...block, sources: newSources }
+                onChange({ ...value, blocks: newBlocks })
+            }
+        }
+
+        const handleAddSource = (blockIndex: number) => {
+            if (value.mode === 'text') {
+                const newBlocks = [...value.blocks]
+                const block = newBlocks[blockIndex]
+                const newSource: VariableSource = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    label: '',
+                    content: ''
+                }
+                newBlocks[blockIndex] = { ...block, sources: [...block.sources, newSource] }
+                onChange({ ...value, blocks: newBlocks })
+            }
+        }
+
+        const handleDeleteSource = (blockIndex: number, sourceId: string) => {
+            if (value.mode === 'text') {
+                const newBlocks = [...value.blocks]
+                const block = newBlocks[blockIndex]
+                const newSources = block.sources.filter(s => s.id !== sourceId)
+                newBlocks[blockIndex] = { ...block, sources: newSources }
+                onChange({ ...value, blocks: newBlocks })
+            }
+        }
+
+        const handleInstructionChange = (blockIndex: number, text: string) => {
+            if (value.mode === 'text') {
+                const newBlocks = [...value.blocks]
+                newBlocks[blockIndex] = { ...newBlocks[blockIndex], instruction: text }
                 onChange({ ...value, blocks: newBlocks })
             }
         }
@@ -259,7 +251,7 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
                 <div className="flex items-center justify-between shrink-0">
                     <h2 className="text-lg font-semibold">Prompt Construction</h2>
                     <Select
-                        value={value.mode === 'text' ? 'universal' : 'json'}
+                        value={(mode || value.mode) === 'text' ? 'universal' : 'json'}
                         onValueChange={handleTemplateChange}
                     >
                         <SelectTrigger className="w-[200px]">
@@ -274,124 +266,208 @@ export const LabEditor = React.forwardRef<LabEditorHandle, LabEditorProps>(
 
                 {value.mode === 'text' ? (
                     <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                        {value.blocks.map((block, index) => (
-                            <div key={block.id} className="p-4 border rounded-md bg-card space-y-3 relative group">
-                                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                        onClick={() => handleDeleteBlock(index)}
-                                    >
-                                        <Trash className="h-4 w-4" />
-                                    </Button>
-                                </div>
-
-                                {block.generatedOutput ? (
-                                    // View Mode
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <Badge variant="outline" className="text-xs font-mono">
-                                                {block.variable || "No Variable"}
-                                            </Badge>
+                        {value.blocks.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground space-y-4 border-2 border-dashed rounded-lg p-8">
+                                <p>No text blocks yet.</p>
+                                <Button variant="outline" onClick={handleAddBlock}>
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Text Block
+                                </Button>
+                            </div>
+                        ) : (
+                            <>
+                                {value.blocks.map((block, index) => (
+                                    // ... Existing Block Rendering ...
+                                    <div key={block.id} className="p-4 border rounded-md bg-card space-y-3 relative group">
+                                        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                                             <Button
                                                 variant="ghost"
-                                                size="sm"
-                                                className="h-6 gap-1 text-muted-foreground mr-8"
-                                                onClick={() => handleEditBlock(index)}
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                onClick={() => handleDeleteBlock(index)}
                                             >
-                                                <Pencil className="h-3 w-3" />
-                                                Edit
+                                                <Trash className="h-4 w-4" />
                                             </Button>
                                         </div>
-                                        <div className="p-3 bg-muted/30 rounded italic text-sm border-l-2 border-primary/50 text-foreground">
-                                            {block.generatedOutput}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    // Edit Mode
-                                    <>
-                                        <div className="space-y-1">
-                                            <Input
-                                                ref={el => { variableRefs.current[index] = el }}
-                                                placeholder="Variable, e.g., {{colors}}"
-                                                className="font-mono text-sm"
-                                                value={block.variable}
-                                                onChange={(e) => handleBlockChange(index, 'variable', e.target.value)}
-                                                onFocus={() => {
-                                                    setActiveBlockIndex(index)
-                                                    setActiveInputType('variable')
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <Textarea
-                                                ref={el => { instructionRefs.current[index] = el }}
-                                                placeholder="Instruction, e.g., Describe these poetically..."
-                                                className="font-mono text-sm h-20 resize-y"
-                                                value={block.instruction}
-                                                onChange={(e) => handleBlockChange(index, 'instruction', e.target.value)}
-                                                onFocus={() => {
-                                                    setActiveBlockIndex(index)
-                                                    setActiveInputType('instruction')
-                                                }}
-                                            />
-                                        </div>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            className="w-full gap-2"
-                                            onClick={() => onGenerateBlock?.(index)}
-                                        >
-                                            <Play className="h-3 w-3" />
-                                            Generate Segment
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
-                        ))}
 
-                        <div className="flex items-center gap-2 pt-2">
-                            <Button variant="outline" className="flex-1 gap-2 border-dashed" onClick={handleAddBlock}>
-                                <Plus className="h-4 w-4" />
-                                Add Text Block
-                            </Button>
-                            <Button
-                                className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                                onClick={onAssemble}
-                                disabled={value.blocks.some(b => !b.generatedOutput)}
-                            >
-                                <Sparkles className="h-4 w-4" />
-                                Assemble Final Paragraph
-                            </Button>
-                        </div>
+                                        {block.generatedOutput ? (
+                                            // View Mode
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {block.sources.map(s => (
+                                                            <Badge key={s.id} variant="outline" className="text-xs font-mono">
+                                                                {s.label || "Unlabeled"}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 gap-1 text-muted-foreground mr-8"
+                                                        onClick={() => handleEditBlock(index)}
+                                                    >
+                                                        <Pencil className="h-3 w-3" />
+                                                        Edit
+                                                    </Button>
+                                                </div>
+                                                <div className="p-3 bg-muted/30 rounded italic text-sm border-l-2 border-primary/50 text-foreground">
+                                                    {block.generatedOutput}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            // Edit Mode
+                                            <div
+                                                className="space-y-3"
+                                                onClick={() => setActiveBlockIndex(index)}
+                                            >
+                                                {/* Sources List */}
+                                                <div className="space-y-2">
+                                                    <label className="text-xs text-muted-foreground font-medium">Variable Sources</label>
+                                                    {block.sources.map(source => (
+                                                        <div key={source.id} className="flex gap-2 items-start">
+                                                            <Input
+                                                                placeholder="Label (e.g., Colors)"
+                                                                className="font-mono text-sm w-1/3"
+                                                                value={source.label}
+                                                                onChange={(e) => handleSourceChange(index, source.id, 'label', e.target.value)}
+                                                            />
+                                                            <Textarea
+                                                                placeholder="Keywords..."
+                                                                className="font-mono text-sm w-2/3 min-h-[40px] resize-y bg-muted/50"
+                                                                value={source.content}
+                                                                onChange={(e) => handleSourceChange(index, source.id, 'content', e.target.value)}
+                                                            />
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                                                onClick={() => handleDeleteSource(index, source.id)}
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                    ))}
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger asChild>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="w-full gap-2 border-dashed"
+                                                            >
+                                                                <Plus className="h-3 w-3" />
+                                                                Add Source
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="start" className="w-56">
+                                                            {availableVariables.length > 0 ? (
+                                                                availableVariables.map((v) => (
+                                                                    <DropdownMenuItem
+                                                                        key={v.token}
+                                                                        onClick={() => onAddVariable?.(index, v.token)}
+                                                                    >
+                                                                        {v.label}
+                                                                    </DropdownMenuItem>
+                                                                ))
+                                                            ) : (
+                                                                <DropdownMenuItem disabled>
+                                                                    No variables available
+                                                                </DropdownMenuItem>
+                                                            )}
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </div>
+
+                                                {/* Instruction */}
+                                                <div className="space-y-1">
+                                                    <label className="text-xs text-muted-foreground font-medium">Instruction / How to Transform</label>
+                                                    <Textarea
+                                                        ref={el => { instructionRefs.current[index] = el }}
+                                                        placeholder="E.g., Describe these colors poetically..."
+                                                        className="font-mono text-sm h-20 resize-y"
+                                                        value={block.instruction}
+                                                        onChange={(e) => handleInstructionChange(index, e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <Button
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className={cn("w-full gap-2", (!block.sources.length || !block.instruction.trim() || generatingBlockId) && "opacity-50")}
+                                                    onClick={() => onGenerateBlock?.(index)}
+                                                    disabled={block.sources.length === 0 || !block.instruction.trim() || !!generatingBlockId}
+                                                    title={(!block.sources.length || !block.instruction.trim()) ? "Add at least one Source and an Instruction to generate." : "Generate"}
+                                                >
+                                                    {generatingBlockId === block.id ? (
+                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                    ) : (
+                                                        <Play className="h-3 w-3" />
+                                                    )}
+                                                    Generate Segment
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+
+                                <div className="flex items-center gap-2 pt-2">
+                                    <Button variant="outline" className="flex-1 gap-2 border-dashed" onClick={handleAddBlock}>
+                                        <Plus className="h-4 w-4" />
+                                        Add Text Block
+                                    </Button>
+                                    <Button
+                                        className="flex-1 gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                                        onClick={onAssemble}
+                                        disabled={value.blocks.some(b => !b.generatedOutput)}
+                                    >
+                                        <Sparkles className="h-4 w-4" />
+                                        Assemble Final Paragraph
+                                    </Button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 ) : (
                     // JSON Mode - Recursive Tree
                     <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                        {value.nodes.map((node, index) => (
-                            <JsonNodeRow
-                                key={node.id}
-                                node={node}
-                                activeFieldId={activeFieldId}
-                                setActiveFieldId={setActiveFieldId}
-                                fieldRef={registerFieldRef}
-                                onUpdate={(updated) => {
-                                    const newNodes = [...value.nodes]
-                                    newNodes[index] = updated
-                                    onChange({ ...value, nodes: newNodes })
-                                }}
-                                onDelete={() => {
-                                    const newNodes = value.nodes.filter((_, i) => i !== index)
-                                    onChange({ ...value, nodes: newNodes })
-                                }}
-                                onGenerate={(id) => onGenerateBlock?.(id)}
-                            />
-                        ))}
-                        <Button variant="outline" className="w-full gap-2 border-dashed" onClick={handleAddRootNode}>
-                            <Plus className="h-4 w-4" />
-                            Add Root Key
-                        </Button>
+                        {value.nodes.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-muted-foreground space-y-4 border-2 border-dashed rounded-lg p-8">
+                                <p>Start your JSON Tree.</p>
+                                <Button variant="outline" onClick={handleAddRootNode}>
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Root Key
+                                </Button>
+                            </div>
+                        ) : (
+                            <>
+                                {value.nodes.map((node, index) => (
+                                    <JsonNodeRow
+                                        key={node.id}
+                                        node={node}
+                                        activeFieldId={activeFieldId}
+                                        setActiveFieldId={setActiveFieldId}
+                                        fieldRef={registerFieldRef}
+                                        onUpdate={(updated) => {
+                                            const newNodes = [...value.nodes]
+                                            newNodes[index] = updated
+                                            onChange({ ...value, nodes: newNodes })
+                                        }}
+                                        onDelete={() => {
+                                            const newNodes = value.nodes.filter((_, i) => i !== index)
+                                            onChange({ ...value, nodes: newNodes })
+                                        }}
+                                        onGenerate={(id) => onGenerateBlock?.(id)}
+                                        availableVariables={availableVariables}
+                                        onResolveToken={onResolveToken}
+                                        generatingNodeId={generatingNodeId}
+                                    />
+                                ))}
+                                <Button variant="outline" className="w-full gap-2 border-dashed" onClick={handleAddRootNode}>
+                                    <Plus className="h-4 w-4" />
+                                    Add Root Key
+                                </Button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>

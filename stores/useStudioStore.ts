@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { EditorState, JsonNode, Block } from '@/components/lab/types'
 
 export type ViewMode = 'main' | 'component'
 
@@ -15,8 +16,19 @@ export interface Asset {
 export interface ComponentFolder {
     id: string
     name: string
-    status: 'empty' | 'ready'
     generatedPrompt?: string
+}
+
+export interface SystemSettings {
+    analystPrompt: string
+    segmentWriterPrompt: string
+    assemblerPrompt: string
+}
+
+export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+    analystPrompt: "You are an expert visual analyst for AI art generation. Analyze the provided image focusing strictly on these aspects: [targets]. Output ONLY valid JSON.",
+    segmentWriterPrompt: "You are a creative assistant for AI Art prompts. Transform the raw data into a descriptive phrase based on the instruction. Return ONLY the text.",
+    assemblerPrompt: "You are an expert prompt engineer. Combine these disjointed text blocks into a single, fluid, cohesive paragraph for an image generator. Preserve the details, fix the grammar/flow."
 }
 
 interface StudioState {
@@ -24,6 +36,7 @@ interface StudioState {
     components: ComponentFolder[]
     viewMode: ViewMode
     activeComponentId: string | null
+    mainSubject: string
 
     // Actions
     addAsset: (url: string, componentId?: string) => void
@@ -33,7 +46,21 @@ interface StudioState {
     saveComponentPrompt: (id: string, prompt: string) => void
     setActiveComponent: (id: string | null) => void
     setViewMode: (mode: ViewMode) => void
+    setMainSubject: (text: string) => void
     resetProject: () => void
+
+    labMode: 'text' | 'json'
+    labTextBlocks: Block[]
+    labJsonNodes: JsonNode[]
+
+    setLabMode: (mode: 'text' | 'json') => void
+    setLabTextBlocks: (blocks: Block[]) => void
+    setLabJsonNodes: (nodes: JsonNode[]) => void
+
+    settings: SystemSettings
+    updateSetting: (key: keyof SystemSettings, value: string) => void
+    resetSetting: (key: keyof SystemSettings) => void
+    resetAllSettings: () => void
 }
 
 export const useStudioStore = create<StudioState>()(
@@ -43,6 +70,7 @@ export const useStudioStore = create<StudioState>()(
             components: [],
             viewMode: 'main',
             activeComponentId: null,
+            mainSubject: '',
 
             addAsset: (url: string, componentId?: string) =>
                 set((state) => ({
@@ -58,16 +86,27 @@ export const useStudioStore = create<StudioState>()(
                     ],
                 })),
 
-            updateAssetAnalysis: (id: string, data: Record<string, string[]>) => {
-                console.log("Store: updateAssetAnalysis triggered", id, data);
+            updateAssetAnalysis: (id: string, newData: Record<string, string[]>) => {
+                console.log("Store: updateAssetAnalysis deep merge", id, newData);
                 set((state) => {
                     const newAssets = state.assets.map((asset) => {
                         if (asset.id === id) {
+                            // Deep Merge Logic
+                            const currentData = asset.analysisData || {};
+                            const mergedData = { ...currentData };
+
+                            Object.keys(newData).forEach(key => {
+                                const existingValues = mergedData[key] || [];
+                                const newValues = newData[key] || [];
+                                // Merge and deduplicate
+                                mergedData[key] = Array.from(new Set([...existingValues, ...newValues]));
+                            });
+
                             return {
                                 ...asset,
                                 analyzed: true,
-                                extractors: Object.keys(data),
-                                analysisData: data
+                                extractors: Object.keys(mergedData),
+                                analysisData: mergedData
                             };
                         }
                         return asset;
@@ -106,6 +145,26 @@ export const useStudioStore = create<StudioState>()(
             setActiveComponent: (id: string | null) => set({ activeComponentId: id }),
 
             setViewMode: (mode: ViewMode) => set({ viewMode: mode }),
+            setMainSubject: (text: string) => set({ mainSubject: text }),
+
+            labMode: 'text',
+            labTextBlocks: [],
+            labJsonNodes: [],
+
+            setLabMode: (mode) => set({ labMode: mode }),
+            setLabTextBlocks: (blocks) => set({ labTextBlocks: blocks }),
+            setLabJsonNodes: (nodes) => set({ labJsonNodes: nodes }),
+
+            settings: DEFAULT_SYSTEM_SETTINGS,
+            updateSetting: (key, value) =>
+                set((state) => ({
+                    settings: { ...state.settings, [key]: value }
+                })),
+            resetSetting: (key) =>
+                set((state) => ({
+                    settings: { ...state.settings, [key]: DEFAULT_SYSTEM_SETTINGS[key] }
+                })),
+            resetAllSettings: () => set({ settings: DEFAULT_SYSTEM_SETTINGS }),
 
             resetProject: () =>
                 set({
@@ -113,6 +172,9 @@ export const useStudioStore = create<StudioState>()(
                     components: [],
                     viewMode: 'main',
                     activeComponentId: null,
+                    labMode: 'text',
+                    labTextBlocks: [],
+                    labJsonNodes: []
                 }),
         }),
         {

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Copy, FileCode, FlaskConical, GripVertical, ArrowLeft } from "lucide-react"
+import { Copy, FileCode, FlaskConical, GripVertical, ArrowLeft, Check } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -17,36 +17,16 @@ import {
 } from "@/components/ui/select"
 import { StudioShell } from "@/components/layout/StudioShell"
 import { LabInventory } from "@/components/lab/LabInventory"
-import { LabEditor, LabEditorHandle, EditorState } from "@/components/lab/LabEditor"
-// Recursive Tree Compiler
-const compileJsonTree = (nodes: JsonNode[], store: any): any => {
-    // If we are processing a list of nodes, they effectively form an object (key-value pairs)
-    // UNLESS they are children of an Array node, in which case they form a list of values.
-    // But this function signature takes `nodes`.
-    // We need to know if we are building an Array or an Object.
-    // Let's refactor: this function resolves a list of nodes into... an Object?
-    // Wait, the children of an Array Node are nodes.
-    // If I map them: `node.children.map(child => resolve(child))`.
+import { LabEditor, LabEditorHandle } from "@/components/lab/LabEditor"
+import { EditorState, AvailableVariable, VariableSource, JsonNode, Block } from "@/components/lab/types"
+import { useStudioStore } from "@/stores/useStudioStore"
+import { compileString } from "@/utils/promptCompiler"
+import { generateSegment, assembleParagraph } from "@/utils/labGenerator"
 
-    // Let's define a resolver for a SINGLE node first.
-    // But the root is a list of nodes.
-
-    // We'll treat the ROOT as an Object.
-    return nodes.reduce((acc: any, node) => {
-        // If the node is in an object context, it has a key.
-        if (node.key) {
-            acc[node.key] = resolveNodeValue(node, store)
-        }
-        return acc
-    }, {})
-}
+// --- Helpers ---
 
 const resolveNodeValue = (node: JsonNode, store: any): any => {
     if (node.type === 'string') {
-        // Use generatedOutput if available, otherwise compile on demand (or show raw instruction?)
-        // The prompt asked to "compileString(node.instruction)".
-        // We'll prioritize generatedOutput to respect the "Generate" button,
-        // fallback to compiled instruction for "Live Preview" feel.
         return node.generatedOutput || compileString(node.instruction, {
             assets: store.assets,
             components: store.components,
@@ -54,55 +34,17 @@ const resolveNodeValue = (node: JsonNode, store: any): any => {
         })
     }
     if (node.type === 'object') {
-        // Children form an object
         return node.children.reduce((acc: any, child) => {
             if (child.key) acc[child.key] = resolveNodeValue(child, store)
             return acc
         }, {})
     }
     if (node.type === 'array') {
-        // Children form an array (ignore keys)
         return node.children.map(child => resolveNodeValue(child, store))
     }
     return null
 }
 
-import { useStudioStore } from "@/stores/useStudioStore"
-import { compileString } from "@/utils/promptCompiler"
-import { JsonNode, JsonNodeType } from "@/components/lab/types"
-
-// Helper to flatten tree into preview JSON
-const flattenJson = (nodes: JsonNode[]): any => {
-    const result: any = {}
-
-    nodes.forEach(node => {
-        let value: any
-        if (node.type === 'object') {
-            value = flattenJson(node.children)
-        } else if (node.type === 'array') {
-            value = node.children.map(child => {
-                if (child.type === 'object') return flattenJson(child.children)
-                if (child.type === 'array') return [] // Nested arrays init
-                return child.generatedOutput || child.instruction // fallback to instruction if no output? or null?
-            })
-        } else {
-            // String
-            value = node.generatedOutput || node.instruction // Use generated or raw instruction
-        }
-
-        // For array parents, keys don't matter in the same way, but here we process list of nodes.
-        // If this list of nodes belongs to an Object, we use keys.
-        // If it belongs to an Array, we just push values.
-        // But `flattenJson` is called on `node.children`.
-        // We need context if we are in an Array or Object?
-        // Actually, JsonNode structure implies `children` of an Array node are the items.
-        // But `flattenJson` takes `nodes`.
-        // Let's refine:
-    })
-    return result
-}
-
-// Improved Recursive Flattening
 const buildPreview = (nodes: JsonNode[], isArray: boolean = false): any => {
     if (isArray) {
         return nodes.map(node => {
@@ -122,88 +64,299 @@ const buildPreview = (nodes: JsonNode[], isArray: boolean = false): any => {
     }
 }
 
+// --- Main Component ---
+
 export function LabWorkspace() {
     const store = useStudioStore()
-    const [editorContent, setEditorContent] = React.useState<EditorState>({
-        mode: 'text',
-        blocks: [
-            { id: 'default-block-1', variable: '', instruction: '', generatedOutput: null }
-        ]
-    })
-    const [previewJson, setPreviewJson] = React.useState<Record<string, string>>({}) // DEPRECATED implicitly by new build logic?
-    // We can compute preview on the fly or store it.
-    // Let's compute it during render or useMemo to avoid state sync issues.
+    const {
+        labMode, setLabMode,
+        labTextBlocks, setLabTextBlocks,
+        labJsonNodes, setLabJsonNodes
+    } = useStudioStore()
+
+    // Construct the unified editor state for the component
+    const editorContent: EditorState = React.useMemo(() => {
+        if (labMode === 'text') {
+            return { mode: 'text', blocks: labTextBlocks }
+        } else {
+            return { mode: 'json', nodes: labJsonNodes }
+        }
+    }, [labMode, labTextBlocks, labJsonNodes])
+
+    const handleEditorChange = (newValue: EditorState) => {
+        if (newValue.mode === 'text') {
+            setLabTextBlocks(newValue.blocks)
+        } else {
+            setLabJsonNodes(newValue.nodes)
+        }
+    }
 
     const [assembledOutput, setAssembledOutput] = React.useState<string>("")
+    const [generatingNodeId, setGeneratingNodeId] = React.useState<string | null>(null)
+    const [generatingBlockId, setGeneratingBlockId] = React.useState<string | null>(null)
+    const [isAssembling, setIsAssembling] = React.useState(false)
     const editorRef = React.useRef<LabEditorHandle>(null)
 
     // Derived Preview for JSON
     const jsonPreview = React.useMemo(() => {
-        if (editorContent.mode === 'json') {
+        if (labMode === 'json') {
             // Treat root nodes as Object fields
-            const rootObj = editorContent.nodes.reduce((acc: any, node) => {
+            const rootObj = labJsonNodes.reduce((acc: any, node) => {
                 if (node.key) acc[node.key] = resolveNodeValue(node, store)
                 return acc
             }, {})
             return JSON.stringify(rootObj, null, 2)
         }
         return ""
-    }, [editorContent, store])
+    }, [labMode, labJsonNodes, store])
 
-    const handleGenerateBlock = (idOrIndex: string | number) => {
-        if (editorContent.mode === 'json') {
-            if (typeof idOrIndex !== 'string') return
-            const id = idOrIndex
+    // Compute available variables for the dropdown
+    const availableVariables = React.useMemo<AvailableVariable[]>(() => {
+        const { assets, components } = store
+        const variables: AvailableVariable[] = []
 
-            // Helper to recursively find and update
-            const updateNodeAndGenerate = (nodes: JsonNode[]): JsonNode[] => {
-                return nodes.map(node => {
-                    if (node.id === id) {
-                        const result = compileString(node.instruction, {
-                            assets: store.assets,
-                            components: store.components,
-                            mainSubject: "Subject Placeholder"
-                        })
-                        return { ...node, generatedOutput: result }
+        // Global keyword categories
+        const globalAssets = assets.filter((a: any) => !a.componentId && a.analysisData)
+        const categories = new Set<string>()
+        globalAssets.forEach((asset: any) => {
+            if (asset.analysisData) {
+                Object.keys(asset.analysisData).forEach(key => categories.add(key))
+            }
+        })
+        categories.forEach(cat => {
+            const label = cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')
+            variables.push({ token: `{{${cat}}}`, label })
+        })
+
+        // Component descriptions
+        components.forEach((comp: any) => {
+            const nameKey = comp.name.toLowerCase().replace(/\s+/g, '_')
+            variables.push({
+                token: `{{component:${nameKey}}}`,
+                label: `${comp.name} (Description)`
+            })
+            // Component keywords
+            variables.push({
+                token: `{{component:${nameKey}:keywords}}`,
+                label: `${comp.name} (Keywords)`
+            })
+        })
+
+        // Main subject
+        variables.push({ token: '{{main_subject}}', label: 'Main Subject' })
+
+        return variables
+    }, [store])
+
+    /**
+     * Resolves a variable token to its actual data string.
+     * Used for inserting real data instead of template variables.
+     */
+    const resolveTokenData = React.useCallback((token: string): string => {
+        const state = useStudioStore.getState()
+        const { assets, components } = state
+
+        // Clean the token (remove {{ }} if present)
+        const cleanToken = token.replace(/^\{\{|\}\}$/g, '').trim()
+
+        // 1. Main Subject
+        if (cleanToken === 'main_subject') {
+            return state.mainSubject || ""
+        }
+
+        // 2. Component references
+        if (cleanToken.startsWith('component:')) {
+            const isKeywords = cleanToken.endsWith(':keywords')
+            let componentNameKey = cleanToken.replace('component:', '')
+            if (isKeywords) {
+                componentNameKey = componentNameKey.replace(':keywords', '')
+            }
+            componentNameKey = componentNameKey.toLowerCase()
+
+            const component = components.find(c =>
+                c.name.toLowerCase().replace(/\s+/g, '_') === componentNameKey
+            )
+
+            if (!component) return token // Fallback
+
+            if (isKeywords) {
+                // Aggregate keywords from component's linked assets
+                const componentAssets = assets.filter(a => a.componentId === component.id && a.analysisData)
+                const keywords = new Set<string>()
+                componentAssets.forEach(asset => {
+                    Object.values(asset.analysisData!).forEach(values => {
+                        values.forEach(v => keywords.add(v))
+                    })
+                })
+                return keywords.size > 0 ? Array.from(keywords).join(', ') : token
+            } else {
+                // Return component description
+                return component.generatedPrompt || token
+            }
+        }
+
+        // 3. Global Keywords
+        const globalAssets = assets.filter(a => !a.componentId && a.analysisData)
+        const categoryKeywords = new Set<string>()
+
+        globalAssets.forEach(asset => {
+            if (asset.analysisData) {
+                Object.entries(asset.analysisData).forEach(([key, values]) => {
+                    if (key.toLowerCase() === cleanToken.toLowerCase()) {
+                        values.forEach(v => categoryKeywords.add(v))
                     }
-                    if (node.children) {
-                        return { ...node, children: updateNodeAndGenerate(node.children) }
-                    }
-                    return node
                 })
             }
+        })
 
-            const newNodes = updateNodeAndGenerate(editorContent.nodes)
-            setEditorContent({ ...editorContent, nodes: newNodes })
+        if (categoryKeywords.size > 0) {
+            return Array.from(categoryKeywords).join(', ')
+        }
 
+        // Fallback
+        return token
+    }, [])
+
+    // Handler for adding a variable from dropdown
+    const handleAddVariable = React.useCallback((blockIndex: number, token: string) => {
+        if (labMode !== 'text') return
+
+        // Parse token to get label
+        const cleanToken = token.replace(/^\{\{|\}\}$/g, '').trim()
+        const label = cleanToken.charAt(0).toUpperCase() + cleanToken.slice(1).replace(/_/g, ' ')
+        const content = resolveTokenData(token)
+
+        const newSource: VariableSource = {
+            id: Math.random().toString(36).substr(2, 9),
+            label,
+            content
+        }
+
+        const newBlocks = [...labTextBlocks]
+        const block = newBlocks[blockIndex]
+        newBlocks[blockIndex] = {
+            ...block,
+            sources: [...block.sources, newSource]
+        }
+        setLabTextBlocks(newBlocks)
+    }, [labMode, labTextBlocks, resolveTokenData, setLabTextBlocks])
+
+    const handleGenerateBlock = async (idOrIndex: string | number) => {
+        const isJsonMode = labMode === 'json'
+
+        if (isJsonMode) {
+            setGeneratingNodeId(idOrIndex.toString())
         } else {
-            // Text Mode
-            if (typeof idOrIndex !== 'number') return
-            const index = idOrIndex
-            const block = editorContent.blocks[index]
-            if (!block) return
+            // Text Mode - idOrIndex is index (number)
+            if (typeof idOrIndex === 'number' && labTextBlocks[idOrIndex]) {
+                setGeneratingBlockId(labTextBlocks[idOrIndex].id)
+            }
+        }
 
-            // Mock AI: Compile the instruction string, replacing variables
-            const compiled = compileString(block.instruction, {
-                assets: store.assets,
-                components: store.components,
-                mainSubject: "Subject Placeholder"
-            })
+        try {
+            if (labMode === 'json') {
+                if (typeof idOrIndex !== 'string') return
+                const id = idOrIndex
 
-            const newBlocks = [...editorContent.blocks]
-            newBlocks[index] = { ...newBlocks[index], generatedOutput: compiled }
-            setEditorContent({ ...editorContent, blocks: newBlocks })
+                // Helper to recursively find and update
+                const updateNodeAndGenerate = async (nodes: JsonNode[]): Promise<JsonNode[]> => {
+                    const results = await Promise.all(nodes.map(async (node) => {
+                        if (node.id === id) {
+                            // Construct variables from sources
+                            const variables = (node.sources || []).map(s => ({
+                                label: s.label,
+                                content: s.content
+                            }))
+
+                            // Call API to generate segment. 
+                            // Pass node.key as contextKey to improve context awareness
+                            const result = await generateSegment(variables, node.instruction, node.key)
+                            return { ...node, generatedOutput: result }
+                        }
+                        if (node.children) {
+                            const updatedChildren = await updateNodeAndGenerate(node.children)
+                            return { ...node, children: updatedChildren }
+                        }
+                        return node
+                    }))
+                    return results
+                }
+
+                const newNodes = await updateNodeAndGenerate(labJsonNodes)
+                setLabJsonNodes(newNodes)
+
+            } else {
+                // Text Mode
+                if (typeof idOrIndex !== 'number') return
+                const index = idOrIndex
+                const block = labTextBlocks[index]
+                if (!block) return
+
+                // Pass structured sources to API
+                const variables = block.sources.map(s => ({ label: s.label, content: s.content }))
+
+                // Call API to generate segment
+                const result = await generateSegment(variables, block.instruction)
+
+                const newBlocks = [...labTextBlocks]
+                newBlocks[index] = { ...newBlocks[index], generatedOutput: result }
+                setLabTextBlocks(newBlocks)
+            }
+        } catch (error) {
+            console.error('Generation error:', error)
+            alert('Failed to generate segment. Check console for details.')
+        } finally {
+            setGeneratingNodeId(null)
+            setGeneratingBlockId(null)
         }
     }
 
-    const handleAssemble = () => {
-        if (editorContent.mode === 'text') {
-            const output = editorContent.blocks
-                .map(b => b.generatedOutput)
-                .filter(Boolean)
-                .join(" ") // Joined with spaces to mock paragraph stitching
-            setAssembledOutput(output)
+    const handleAssemble = async () => {
+        if (labMode === 'text') {
+            setIsAssembling(true)
+            try {
+                const segments = labTextBlocks
+                    .map(b => b.generatedOutput)
+                    .filter(Boolean) as string[]
+
+                if (segments.length === 0) {
+                    alert('Please generate some segments first')
+                    return
+                }
+
+                // Call API to assemble paragraph
+                const result = await assembleParagraph(segments)
+                setAssembledOutput(result)
+            } catch (error) {
+                console.error('Assembly error:', error)
+                alert('Failed to assemble paragraph. Check console for details.')
+            } finally {
+                setIsAssembling(false)
+            }
         }
+    }
+
+    const [isCopied, setIsCopied] = React.useState(false)
+
+    // Unified Reactive Preview
+    const previewContent = React.useMemo(() => {
+        if (labMode === 'text') {
+            return labTextBlocks
+                .filter(b => b.generatedOutput)
+                .map(b => b.generatedOutput)
+                .join('\n\n')
+        } else {
+            // JSON Mode: Treat root nodes as Object fields
+            const rootObj = buildPreview(labJsonNodes, false)
+            return JSON.stringify(rootObj, null, 2)
+        }
+    }, [labMode, labTextBlocks, labJsonNodes])
+
+    const handleCopy = () => {
+        if (!previewContent) return
+        navigator.clipboard.writeText(previewContent)
+        setIsCopied(true)
+        setTimeout(() => setIsCopied(false), 2000)
     }
 
     return (
@@ -222,7 +375,37 @@ export function LabWorkspace() {
                             Variable Inventory
                         </div>
                     </div>
-                    <LabInventory onInsert={(token) => editorRef.current?.insertToken(token)} />
+                    <LabInventory onInsert={(token) => {
+                        // In text mode, add as a new variable source with resolved data
+                        // In JSON mode, insert the token into the active field
+                        if (labMode === 'text') {
+                            // Parse token to get label (e.g., "Colors" from "{{colors}}")
+                            const cleanToken = token.replace(/^\{\{|\}\}$/g, '').trim()
+                            const label = cleanToken.charAt(0).toUpperCase() + cleanToken.slice(1).replace(/_/g, ' ')
+                            const content = resolveTokenData(token)
+
+                            // Try to add to active block, if no block is active, create a new one first
+                            const result = editorRef.current?.addVariableToActiveBlock(label, content)
+
+                            // If no block was active, handle fallback
+                            if (result === false) {
+                                // Create a new block with this variable source
+                                const newBlock: Block = {
+                                    id: Math.random().toString(36).substr(2, 9),
+                                    sources: [{
+                                        id: Math.random().toString(36).substr(2, 9),
+                                        label,
+                                        content
+                                    }],
+                                    instruction: '',
+                                    generatedOutput: null
+                                }
+                                setLabTextBlocks([...labTextBlocks, newBlock])
+                            }
+                        } else {
+                            editorRef.current?.insertToken(token)
+                        }
+                    }} />
                 </div>
 
                 {/* Column B: The Workbench */}
@@ -230,9 +413,16 @@ export function LabWorkspace() {
                     <LabEditor
                         ref={editorRef}
                         value={editorContent}
-                        onChange={setEditorContent}
+                        onChange={handleEditorChange}
                         onGenerateBlock={handleGenerateBlock}
                         onAssemble={handleAssemble}
+                        availableVariables={availableVariables}
+                        onAddVariable={handleAddVariable}
+                        onResolveToken={resolveTokenData}
+                        mode={labMode}
+                        onModeChange={setLabMode}
+                        generatingNodeId={generatingNodeId}
+                        generatingBlockId={generatingBlockId}
                     />
                 </div>
 
@@ -244,15 +434,26 @@ export function LabWorkspace() {
                     </div>
 
                     <div className="flex-1 rounded-md border bg-muted/50 p-4 font-mono text-xs overflow-auto whitespace-pre-wrap text-muted-foreground">
-                        {editorContent.mode === 'text'
-                            ? (assembledOutput || "// Assemble blocks to see final output...")
-                            : jsonPreview
-                        }
+                        {previewContent || "// Generate content to see preview..."}
                     </div>
 
-                    <Button variant="outline" className="w-full gap-2">
-                        <Copy className="h-4 w-4" />
-                        Copy to Clipboard
+                    <Button
+                        variant="outline"
+                        className="w-full gap-2 transition-all duration-200"
+                        onClick={handleCopy}
+                        disabled={!previewContent}
+                    >
+                        {isCopied ? (
+                            <>
+                                <Check className="h-4 w-4 text-green-500" />
+                                Copied!
+                            </>
+                        ) : (
+                            <>
+                                <Copy className="h-4 w-4" />
+                                Copy to Clipboard
+                            </>
+                        )}
                     </Button>
                 </div>
             </div>

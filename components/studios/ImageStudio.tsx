@@ -2,10 +2,12 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { uploadImage, deleteImageFromStorage } from "@/utils/uploadManager"
 // Import new studio components
 import { TopBar } from "@/components/studio/TopBar"
 import { EmptyState } from "@/components/studio/EmptyState"
@@ -37,15 +39,47 @@ export function ImageStudio() {
     const [selectedAsset, setSelectedAsset] = React.useState<Asset | null>(null)
     const [isAnalyzing, setIsAnalyzing] = React.useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false)
+    const [isUploading, setIsUploading] = React.useState(false)
 
-    const [selectedExtractors, setSelectedExtractors] = React.useState<string[]>([])
+    // State for Multi-Tone Analysis
+    const [extractionGroups, setExtractionGroups] = React.useState<Array<{ id: string, tone: string, targets: string[] }>>([
+        { id: 'default', tone: '', targets: [] }
+    ])
+    const fileInputRef = React.useRef<HTMLInputElement>(null)
 
     // Handlers
     const handleUpload = () => {
-        // Mock Unsplash URL for testing
-        // Pass activeComponentId if in component view, otherwise undefined (main project)
-        const targetComponentId = viewMode === "component" && activeComponentId ? activeComponentId : undefined
-        addAsset("https://images.unsplash.com/photo-1707343843437-caacff5cfa74", targetComponentId)
+        // Trigger file input
+        fileInputRef.current?.click()
+    }
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0]
+        if (!file) return
+
+        setIsUploading(true)
+        toast.loading("Uploading image...", { id: "upload-toast" })
+
+        try {
+            const url = await uploadImage(file)
+            if (url) {
+                const targetComponentId = viewMode === "component" && activeComponentId ? activeComponentId : undefined
+                addAsset(url, targetComponentId)
+                console.log('Image uploaded successfully:', url)
+                toast.success("Image uploaded successfully", { id: "upload-toast" })
+            } else {
+                toast.error("Failed to upload image. Please try again.", { id: "upload-toast" })
+            }
+        } catch (error) {
+            console.error('Upload error:', error)
+            toast.error("Upload failed", { id: "upload-toast" })
+        } finally {
+            setIsUploading(false)
+            // Reset file input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+            }
+        }
     }
 
     const handleCreateComponent = (name: string) => {
@@ -59,89 +93,115 @@ export function ImageStudio() {
         setViewMode("main")
     }
 
-    const handleToggleExtractor = (id: string) => {
-        setSelectedExtractors(current =>
-            current.includes(id)
-                ? current.filter(item => item !== id)
-                : [...current, id]
-        )
+    const handleDelete = async (id: string, url: string) => {
+        // 1. Try to delete from cloud storage
+        await deleteImageFromStorage(url)
+        // 2. Always delete from local store (UI update)
+        deleteAsset(id)
     }
+
+    // Handlers
+    // Extraction groups are managed directly by the AnalysisModal via setExtractionGroups
+    // No simple toggle handler anymore
 
     const handleAnalyzeAsset = async (input: string[] | string | Blob) => {
         if (!selectedAsset) return
-
         setIsAnalyzing(true)
 
-        // Simulate API delay
-        await new Promise(resolve => setTimeout(resolve, 500))
+        try {
+            // Step A: Prepare Image Data
+            let imageBlob: Blob;
 
-        // Generate Mock Data Object
-        const mockData: Record<string, string[]> = {}
-
-        if (input instanceof Blob) {
-            // Handle Blob Analysis (Mask Mode)
-            // For mock purposes, we'll assume it's like a focused subject analysis
-            mockData['Focused Analysis'] = ['Detailed Texture', 'Specific Feature', 'Masked Region']
-        } else if (Array.isArray(input)) {
-            // Main Mode: Array of Extractors is PASSED IN? 
-            // Actually AnalysisModal calls onAnalyze(payload). 
-            // In main mode, payload was... imageUrl (string) or Blob? 
-            // Wait, AnalysisModal logic:
-            // if (mask) payload = blob
-            // else payload = imageUrl (string)
-
-            // But verify logic in ImageStudio: 
-            // logic used to be: if (Array.isArray(input)) ...
-
-            // If AnalysisModal passes `selectedExtractors` to `onAnalyze`, then input is string[].
-            // BUT, the new AnalysisModal passes `imageUrl` or `Blob`.
-
-            // WE NEED TO CHANGE ImageStudio logic to use `selectedExtractors` STATE directly for main mode logic,
-            // because `input` argument is now the IMAGE SOURCE (string or Blob).
-
-            const extractors = selectedExtractors // Use state instead of input arg if input is image
-
-            // Note: If input IS array, we use it (legacy support?), but new Modal passes Image.
-            // Let's support both or switch.
-            // The Modal passes `image: string | Blob`.
-
-            if (extractors.includes('subject')) mockData['Subject'] = ['Cyberpunk City', 'Neon Lights', 'Futuristic Building']
-            if (extractors.includes('composition')) mockData['Composition'] = ['Wide Shot', 'Leading Lines', 'Rule of Thirds']
-            if (extractors.includes('lighting')) mockData['Lighting'] = ['Neon Signs', 'Volumetric Fog', 'Low Key']
-            if (extractors.includes('color')) mockData['Colors'] = ['Neon Cyan', 'Magma Red', 'Deep Purple']
-
-        } else {
-            // Component Mode: Freeform String (if input is string and NOT a url we treat as prompt?)
-            // Or we check viewMode.
-
-            if (viewMode === 'component') {
-                // Mock Component Analysis
-                // input might be the customized prompt string OR the image URL/Blob.
-                // In the modified Modal, for component mode, we passed payload = imageUrl/Blob. 
-                // We didn't pass the custom prompt text in the payload.
-                // This is a disconnect.
-
-                // For now, let's just generate generic component keywords
-                mockData['Keywords'] = ['Cinematic', 'Detailed', '8k', 'Refined']
+            // Check if input is Blob (from mask)
+            if (input instanceof Blob) {
+                imageBlob = input;
             } else {
-                // Fallback for Main mode if input is string/blob (using selectedExtractors state)
-                const extractors = selectedExtractors
-                if (extractors.includes('subject')) mockData['Subject'] = ['Cyberpunk City', 'Neon Lights', 'Futuristic Building']
-                if (extractors.includes('composition')) mockData['Composition'] = ['Wide Shot', 'Leading Lines', 'Rule of Thirds']
-                if (extractors.includes('lighting')) mockData['Lighting'] = ['Neon Signs', 'Volumetric Fog', 'Low Key']
-                if (extractors.includes('color')) mockData['Colors'] = ['Neon Cyan', 'Magma Red', 'Deep Purple']
+                // Otherwise fetch original image
+                // Import helper dynamically or use the one we just created
+                const { urlToBlob } = await import("@/utils/imageHelpers");
+                imageBlob = await urlToBlob(selectedAsset.url);
             }
+
+            // Step B: Convert to Base64
+            const { blobToBase64 } = await import("@/utils/imageHelpers");
+            const base64Image = await blobToBase64(imageBlob);
+
+            // Step C: Prepare Payload
+            let payload: any = { image: base64Image };
+
+            if (input instanceof Blob) {
+                // Mask Mode - Use default "Analyze this specific area" prompt implicitly via backend fallback
+                // or send a specific prompt if we had one.
+                payload.prompt = "Analyze the specific visual elements in this masked area. Describe the texture, material, and key features.";
+            } else if (Array.isArray(input) || (viewMode === 'main' && extractionGroups.some(g => g.targets.length > 0))) {
+                // Main Mode: Multi-Tone Strategy
+                // Only send active groups that have targets
+                const strategies = extractionGroups.filter(g => g.targets.length > 0).map(g => ({
+                    tone: g.tone,
+                    targets: g.targets
+                }))
+
+                if (strategies.length > 0) {
+                    payload.strategies = strategies
+                } else {
+                    // Fallback if no targets selected but analyzed pressed (unlikely due to disable logic)
+                    payload.prompt = "Analyze the key visual elements of this image including subject, composition, and style."
+                }
+            } else if (typeof input === 'string') {
+                // Legacy or direct prompt string
+                payload.prompt = input;
+            } else {
+                // Component view fallback
+                if (viewMode === 'component') {
+                    payload.prompt = "Analyze this image to create a detailed description suitable for training a LoRA or creating a prompt for this specific object/style. Focus on key identifiers.";
+                }
+            }
+
+            // Step D: Call API
+            const settings = useStudioStore.getState().settings
+
+            const response = await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...payload,
+                    systemOverride: settings.analystPrompt
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Analysis failed: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            // Step E: Update Store
+            updateAssetAnalysis(selectedAsset.id, data);
+
+            // Success indication (console for now, UI toast later)
+            console.log("Analysis Complete", data);
+
+        } catch (error) {
+            console.error("Analysis Error:", error);
+            // Ideally show a toast here
+            toast.error("Analysis failed. Check console for details.", { id: "analysis-toast" });
+        } finally {
+            setIsAnalyzing(false)
+            setSelectedAsset(null)
         }
-
-        // Call the Global Store Action
-        updateAssetAnalysis(selectedAsset.id, mockData)
-
-        setIsAnalyzing(false)
-        setSelectedAsset(null)
     }
 
     return (
         <div className="flex h-full w-full overflow-hidden">
+            {/* Hidden File Input */}
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*"
+            />
+
             {/* Part A: Main Workspace */}
             <div className="flex-1 flex flex-col relative">
                 {/* Floating Trigger */}
@@ -172,6 +232,7 @@ export function ImageStudio() {
                         onUpload={handleUpload}
                         onNewComponent={() => setIsCreateModalOpen(true)}
                         onBack={handleBackToMain}
+                        isUploading={isUploading}
                     />
                 </div>
 
@@ -205,7 +266,7 @@ export function ImageStudio() {
                                         <AssetCard
                                             imageSrc={asset.url}
                                             analyzed={asset.analyzed}
-                                            onDelete={() => deleteAsset(asset.id)}
+                                            onDelete={() => handleDelete(asset.id, asset.url)}
                                             className="cursor-pointer hover:ring-2 hover:ring-primary hover:ring-offset-2"
                                         />
                                     </div>
@@ -234,8 +295,8 @@ export function ImageStudio() {
                 imageUrl={selectedAsset?.url || ""}
                 isAnalyzing={isAnalyzing}
                 onAnalyze={handleAnalyzeAsset}
-                selectedExtractors={selectedExtractors}
-                onToggleExtractor={handleToggleExtractor}
+                extractionGroups={extractionGroups}
+                setExtractionGroups={setExtractionGroups}
                 viewMode={viewMode}
             />
 

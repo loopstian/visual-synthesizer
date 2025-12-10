@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Album, Sparkles, FolderSync, Check, CheckCircle2, Pencil, FlaskConical } from "lucide-react"
+import { Album, Sparkles, FolderSync, Check, CheckCircle2, Pencil, FlaskConical, Loader2, Copy, RotateCcw } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,11 +29,13 @@ import { KeywordSection } from "@/components/studio/drawer/KeywordSection"
 import { useStudioStore, ComponentFolder } from "@/stores/useStudioStore"
 
 export function SynthesizerDrawer() {
-    const { assets, viewMode, activeComponentId, components, saveComponentPrompt, setViewMode, setActiveComponent } = useStudioStore()
+    const { assets, viewMode, activeComponentId, components, saveComponentPrompt, setViewMode, setActiveComponent, mainSubject, setMainSubject } = useStudioStore()
     const [subjectText, setSubjectText] = React.useState("")
     const [viewingComponent, setViewingComponent] = React.useState<ComponentFolder | null>(null)
+    const [isGenerating, setIsGenerating] = React.useState(false)
+    const [generationResult, setGenerationResult] = React.useState<string | null>(null)
 
-    // Sync subjectText with active component's saved prompt
+    // Sync subjectText with active component's saved prompt or mainSubject
     React.useEffect(() => {
         if (viewMode === 'component' && activeComponentId) {
             const activeComponent = components.find(c => c.id === activeComponentId)
@@ -41,9 +43,9 @@ export function SynthesizerDrawer() {
                 setSubjectText(activeComponent.generatedPrompt || "")
             }
         } else if (viewMode === 'main') {
-            setSubjectText("") // Clear text when returning to main mode
+            setSubjectText(mainSubject || "")
         }
-    }, [viewMode, activeComponentId, components])
+    }, [viewMode, activeComponentId, components, mainSubject])
 
     const readyComponents = React.useMemo(() => {
         return components.filter(c => c.generatedPrompt && c.generatedPrompt.length > 0)
@@ -105,18 +107,35 @@ export function SynthesizerDrawer() {
         return Array.from(keywords)
     }, [assets])
 
-    const handleAction = () => {
+    const handleAction = async () => {
         if (viewMode === 'component' && activeComponentId) {
+            // Component Mode: Direct Save & Return (No AI)
             saveComponentPrompt(activeComponentId, subjectText)
             setActiveComponent(null)
             setViewMode('main')
             setSubjectText("")
-        } else {
-            console.log("Generate Master Prompt:", subjectText)
         }
     }
 
     const hasData = Object.keys(aggregatedKeywords).length > 0
+
+    // Validation Logic
+    const isSaveDisabled = React.useMemo(() => {
+        if (viewMode === 'component') {
+            const hasDescription = subjectText.trim().length > 0
+            // Check if we have any actual keywords in the values
+            const hasKeywords = Object.values(aggregatedKeywords).some(list => list.length > 0)
+            return !hasDescription || !hasKeywords
+        }
+        return false
+    }, [viewMode, subjectText, aggregatedKeywords])
+
+    const isMainActionDisabled = React.useMemo(() => {
+        if (viewMode === 'main') {
+            return !subjectText.trim()
+        }
+        return false
+    }, [viewMode, subjectText])
 
     return (
         <div className="flex h-full w-full flex-col overflow-hidden">
@@ -141,8 +160,24 @@ export function SynthesizerDrawer() {
                             }
                             className="resize-none"
                             value={subjectText}
-                            onChange={(e) => setSubjectText(e.target.value)}
+                            onChange={(e) => {
+                                const newVal = e.target.value
+                                setSubjectText(newVal)
+                                if (viewMode === 'main') {
+                                    setMainSubject(newVal)
+                                }
+                            }}
                         />
+                        {viewMode === 'component' && !subjectText.trim() && (
+                            <span className="text-xs text-muted-foreground text-orange-400">
+                                * Description required to save
+                            </span>
+                        )}
+                        {viewMode === 'main' && !subjectText.trim() && (
+                            <span className="text-xs text-muted-foreground text-blue-400">
+                                * Subject required to proceed
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -215,25 +250,52 @@ export function SynthesizerDrawer() {
                         <div className="h-full w-full rounded-full bg-primary" />
                     </span>
                 </div>
-                <Link href="/lab" className="w-full mb-2 block">
-                    <Button variant="outline" className="w-full gap-2">
-                        <FlaskConical className="h-4 w-4" />
-                        Open in Lab
-                    </Button>
-                </Link>
-                <Button size="lg" className="w-full gap-2 font-semibold" onClick={handleAction}>
-                    {viewMode === 'component' ? (
-                        <>
-                            <FolderSync className="h-4 w-4" />
-                            Save & Sync to Main
-                        </>
-                    ) : (
-                        <>
-                            <Sparkles className="h-4 w-4" />
-                            Generate Master Prompt
-                        </>
-                    )}
-                </Button>
+
+                {viewMode === 'main' ? (
+                    <>
+                        <Link href={!isMainActionDisabled ? "/lab" : "#"} className="w-full block">
+                            <Button
+                                variant="default"
+                                className="w-full gap-2 font-semibold"
+                                disabled={isMainActionDisabled}
+                            >
+                                <FlaskConical className="h-4 w-4" />
+                                Open in Lab
+                            </Button>
+                        </Link>
+                        {isMainActionDisabled && (
+                            <p className="text-xs text-center mt-2 text-muted-foreground">
+                                Enter a main subject to proceed to the Lab.
+                            </p>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <Button
+                            size="lg"
+                            className="w-full gap-2 font-semibold"
+                            onClick={handleAction}
+                            disabled={isGenerating || isSaveDisabled}
+                        >
+                            {isGenerating ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <Check className="h-4 w-4" />
+                                    Save & Return
+                                </>
+                            )}
+                        </Button>
+                        {isSaveDisabled && (
+                            <p className="text-xs text-center mt-2 text-muted-foreground">
+                                Add a description and extract keywords to save.
+                            </p>
+                        )}
+                    </>
+                )}
             </div>
             {/* Component Details Modal */}
             <ComponentDetailsModal
