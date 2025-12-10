@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Image as ImageIcon, Video as VideoIcon, Settings, User } from "lucide-react"
+import { Image as ImageIcon, Video as VideoIcon, Settings, User, BookOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -18,10 +18,11 @@ export function StudioShell({ children }: { children?: React.ReactNode }) {
     const router = useRouter()
 
     const isSettings = pathname === '/settings'
+    const isGuide = pathname === '/guide'
 
     const handleStudioChange = (studio: "image" | "video") => {
         setActiveStudio(studio)
-        if (isSettings) {
+        if (isSettings || isGuide) {
             router.push('/')
         }
     }
@@ -36,11 +37,11 @@ export function StudioShell({ children }: { children?: React.ReactNode }) {
                 {/* Center: Logic Nav */}
                 <div className="flex flex-col gap-2 flex-1 w-full px-2">
                     <Button
-                        variant={(!isSettings && activeStudio === "image") ? "secondary" : "ghost"}
+                        variant={(!isSettings && !isGuide && activeStudio === "image") ? "secondary" : "ghost"}
                         size="icon"
                         className={cn(
                             "w-full h-12 rounded-xl transition-all",
-                            !isSettings && activeStudio === "image" && "bg-primary text-primary-foreground shadow-md"
+                            !isSettings && !isGuide && activeStudio === "image" && "bg-primary text-primary-foreground shadow-md"
                         )}
                         onClick={() => handleStudioChange("image")}
                     >
@@ -48,11 +49,11 @@ export function StudioShell({ children }: { children?: React.ReactNode }) {
                     </Button>
 
                     <Button
-                        variant={(!isSettings && activeStudio === "video") ? "secondary" : "ghost"}
+                        variant={(!isSettings && !isGuide && activeStudio === "video") ? "secondary" : "ghost"}
                         size="icon"
                         className={cn(
                             "w-full h-12 rounded-xl transition-all",
-                            !isSettings && activeStudio === "video" && "bg-primary text-primary-foreground shadow-md"
+                            !isSettings && !isGuide && activeStudio === "video" && "bg-primary text-primary-foreground shadow-md"
                         )}
                         onClick={() => handleStudioChange("video")}
                     >
@@ -62,6 +63,19 @@ export function StudioShell({ children }: { children?: React.ReactNode }) {
 
                 {/* Bottom: User & Settings */}
                 <div className="flex flex-col gap-4 items-center mb-4">
+                    <Link href="/guide">
+                        <Button
+                            variant={isGuide ? "secondary" : "ghost"}
+                            size="icon"
+                            className={cn(
+                                "h-10 w-10 text-muted-foreground hover:text-foreground transition-all",
+                                isGuide && "bg-secondary text-foreground shadow-sm"
+                            )}
+                            title="User Guide"
+                        >
+                            <BookOpen className="h-5 w-5" />
+                        </Button>
+                    </Link>
                     <Link href="/settings">
                         <Button
                             variant={isSettings ? "secondary" : "ghost"}
@@ -82,7 +96,7 @@ export function StudioShell({ children }: { children?: React.ReactNode }) {
             </aside>
 
             {/* Main Content Area */}
-            <main className="flex-1 flex flex-col min-w-0">
+            <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
                 {children ? children : (activeStudio === "image" ? <ImageStudio /> : <VideoStudio />)}
             </main>
         </div>
