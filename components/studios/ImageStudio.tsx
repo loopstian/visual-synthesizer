@@ -2,7 +2,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 import { uploadImage, deleteImageFromStorage } from "@/utils/uploadManager"
 import { getImageDimensions } from "@/utils/imageHelpers"
+import { supabase } from "@/lib/supabaseClient"
 // Import new studio components
 import { TopBar } from "@/components/studio/TopBar"
 import { EmptyState } from "@/components/studio/EmptyState"
@@ -53,6 +54,7 @@ export function ImageStudio() {
     const [isAnalyzing, setIsAnalyzing] = React.useState(false)
     const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false)
     const [isUploading, setIsUploading] = React.useState(false)
+    const [isLoadingExamples, setIsLoadingExamples] = React.useState(false)
     const [filter, setFilter] = React.useState<'all' | 'analyzed' | 'not-analyzed'>('all')
 
     // State for Multi-Tone Analysis
@@ -62,27 +64,75 @@ export function ImageStudio() {
     const fileInputRef = React.useRef<HTMLInputElement>(null)
 
     // Handlers
+    const handleLoadExampleAssets = async () => {
+        setIsLoadingExamples(true)
+        try {
+            const { data, error } = await supabase
+                .storage
+                .from('uploads')
+                .list('example', {
+                    limit: 100,
+                    offset: 0,
+                    sortBy: { column: 'name', order: 'asc' },
+                })
+
+            if (data) {
+                data.forEach((file, index) => {
+                    if (file.name === '.emptyFolderPlaceholder') return
+
+                    const { data: { publicUrl } } = supabase
+                        .storage
+                        .from('uploads')
+                        .getPublicUrl(`example/${file.name}`)
+
+                    const assetId = addAsset(publicUrl)
+                })
+                toast.success("Example assets loaded successfully")
+            }
+        } catch (error) {
+            console.error("Error loading example assets:", error)
+            toast.error("Failed to load example assets")
+        } finally {
+            setIsLoadingExamples(false)
+        }
+    }
+
     const handleUpload = () => {
         // Trigger file input
         fileInputRef.current?.click()
     }
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0]
-        if (!file) return
+        const files = event.target.files
+        if (!files || files.length === 0) return
 
         setIsUploading(true)
-        toast.loading("Uploading image...", { id: "upload-toast" })
+        const count = files.length
+        toast.loading(`Uploading ${count} image${count > 1 ? 's' : ''}...`, { id: "upload-toast" })
 
         try {
-            const url = await uploadImage(file)
-            if (url) {
+            const uploadPromises = Array.from(files).map(file => uploadImage(file))
+            const results = await Promise.all(uploadPromises)
+            
+            const successfulUrls = results.filter((url): url is string => url !== null)
+            
+            if (successfulUrls.length > 0) {
                 const targetComponentId = viewMode === "component" && activeComponentId ? activeComponentId : undefined
-                addAsset(url, targetComponentId)
-                console.log('Image uploaded successfully:', url)
-                toast.success("Image uploaded successfully", { id: "upload-toast" })
+                
+                // Add all successful uploads as assets
+                successfulUrls.forEach(url => {
+                    addAsset(url, targetComponentId)
+                })
+                
+                console.log(`${successfulUrls.length} images uploaded successfully`)
+                
+                if (successfulUrls.length === count) {
+                    toast.success(`Successfully uploaded ${count} image${count > 1 ? 's' : ''}`, { id: "upload-toast" })
+                } else {
+                    toast.warning(`Uploaded ${successfulUrls.length} of ${count} images`, { id: "upload-toast" })
+                }
             } else {
-                toast.error("Failed to upload image. Please try again.", { id: "upload-toast" })
+                toast.error("Failed to upload images. Please try again.", { id: "upload-toast" })
             }
         } catch (error) {
             console.error('Upload error:', error)
@@ -214,6 +264,7 @@ export function ImageStudio() {
                 onChange={handleFileChange}
                 className="hidden"
                 accept="image/*"
+                multiple
             />
 
             {/* Part A: Main Workspace */}
@@ -248,16 +299,32 @@ export function ImageStudio() {
                         onBack={handleBackToMain}
                         isUploading={isUploading}
                     >
-                        <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
-                            <SelectTrigger className="w-[130px] h-8 text-xs">
-                                <SelectValue placeholder="Filter" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Images</SelectItem>
-                                <SelectItem value="analyzed">Analyzed</SelectItem>
-                                <SelectItem value="not-analyzed">Not Analyzed</SelectItem>
-                            </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-2">
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="gap-2 h-8" 
+                                onClick={handleLoadExampleAssets} 
+                                disabled={isLoadingExamples}
+                            >
+                                {isLoadingExamples ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                    <Sparkles className="h-3 w-3 text-yellow-500" />
+                                )}
+                                <span className="hidden sm:inline">Load Examples</span>
+                            </Button>
+                            <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+                                <SelectTrigger className="w-[130px] h-8 text-xs">
+                                    <SelectValue placeholder="Filter" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Images</SelectItem>
+                                    <SelectItem value="analyzed">Analyzed</SelectItem>
+                                    <SelectItem value="not-analyzed">Not Analyzed</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </TopBar>
                 </div>
 

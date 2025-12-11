@@ -183,7 +183,7 @@ export function SynthesizerDrawer() {
                         )}
                     </div>
                 </div>
-
+                
                 {/* Optional: Ready Components (Main Mode only) */}
                 {viewMode === 'main' && readyComponents.length > 0 && (
                     <div className="space-y-4">

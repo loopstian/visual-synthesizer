@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Plus, FolderOpen, Trash2, Clock, Sparkles, Loader2 } from "lucide-react"
+import { Plus, FolderOpen, Trash2, Clock, Loader2 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
 import { Button } from "@/components/ui/button"
@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useStudioStore } from "@/stores/useStudioStore"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabaseClient"
 
 export function ProjectDashboard() {
     const { 
@@ -29,14 +28,7 @@ export function ProjectDashboard() {
         deleteProject, 
         currentProjectId, 
         assets, 
-        components, 
-        addAsset,
-        setMainSubject,
-        addComponent,
-        updateAssetAnalysis,
-        setLabTextBlocks,
-        setLabMode,
-        setLabJsonNodes
+        components
     } = useStudioStore()
     const [newProjectName, setNewProjectName] = React.useState("")
     const [isDialogOpen, setIsDialogOpen] = React.useState(false)
@@ -50,10 +42,6 @@ export function ProjectDashboard() {
         try {
             createProject(newProjectName)
 
-            if (newProjectName.toLowerCase() === "example") {
-                await loadExampleAssets()
-            }
-
             setNewProjectName("")
             setIsDialogOpen(false)
             router.push("/")
@@ -63,192 +51,7 @@ export function ProjectDashboard() {
         }
     }
 
-    const loadExampleAssets = async () => {
-        try {
-            // Set dummy project data
-            setMainSubject("Cyberpunk City Street at Night")
-            
-            // Mock Lab Data
-            setLabMode('text')
-            setLabTextBlocks([
-                {
-                    id: "block-1",
-                    instruction: "Describe the lighting and atmosphere based on the provided keywords.",
-                    sources: [
-                        { id: "src-1", label: "Lighting", content: "Neon Lights, Volumetric Fog, Night" },
-                        { id: "src-2", label: "Mood", content: "Cyberpunk, Moody, Cinematic" }
-                    ],
-                    generatedOutput: "The scene is bathed in the glow of neon lights cutting through the volumetric fog of a dark night, creating a moody, cinematic cyberpunk atmosphere."
-                },
-                {
-                    id: "block-2",
-                    instruction: "Describe the main subject and their appearance.",
-                    sources: [
-                        { id: "src-3", label: "Subject", content: "Futuristic City, Skyscrapers, Flying Cars" },
-                        { id: "src-4", label: "Style", content: "Photorealistic, Unreal Engine 5, Detailed" }
-                    ],
-                    generatedOutput: "A futuristic city rises with towering skyscrapers and flying cars weaving between them, rendered in a detailed, photorealistic style reminiscent of Unreal Engine 5."
-                }
-            ])
 
-            setLabJsonNodes([
-                {
-                    id: "root",
-                    key: "root",
-                    type: "object",
-                    instruction: "Generate a cinematic shot definition",
-                    children: [
-                        {
-                            id: "node-1",
-                            key: "shot_config",
-                            type: "object",
-                            instruction: "Define camera and composition settings",
-                            children: [
-                                {
-                                    id: "node-2",
-                                    key: "camera_settings",
-                                    type: "object",
-                                    instruction: "Specify technical camera details",
-                                    children: [
-                                        {
-                                            id: "node-3",
-                                            key: "focal_length",
-                                            type: "string",
-                                            instruction: "Choose appropriate focal length",
-                                            children: [],
-                                            generatedOutput: "35mm"
-                                        },
-                                        {
-                                            id: "node-4",
-                                            key: "aperture",
-                                            type: "string",
-                                            instruction: "Set aperture for depth of field",
-                                            children: [],
-                                            generatedOutput: "f/2.8"
-                                        }
-                                    ],
-                                    generatedOutput: null
-                                },
-                                {
-                                    id: "node-5",
-                                    key: "composition",
-                                    type: "string",
-                                    instruction: "Describe the framing and angle",
-                                    children: [],
-                                    generatedOutput: "Low angle shot looking up at the towering structures, emphasizing their scale."
-                                }
-                            ],
-                            generatedOutput: null
-                        },
-                        {
-                            id: "node-6",
-                            key: "visual_elements",
-                            type: "array",
-                            instruction: "List key visual elements in the scene",
-                            children: [
-                                {
-                                    id: "node-7",
-                                    key: "element",
-                                    type: "object",
-                                    instruction: "Describe a single visual element",
-                                    children: [
-                                        {
-                                            id: "node-8",
-                                            key: "description",
-                                            type: "string",
-                                            instruction: "What is this element?",
-                                            children: [],
-                                            generatedOutput: "Neon signs reflecting on wet pavement"
-                                        },
-                                        {
-                                            id: "node-9",
-                                            key: "prominence",
-                                            type: "string",
-                                            instruction: "How prominent is it? (High/Medium/Low)",
-                                            children: [],
-                                            generatedOutput: "High"
-                                        }
-                                    ],
-                                    generatedOutput: null
-                                }
-                            ],
-                            generatedOutput: null
-                        }
-                    ],
-                    generatedOutput: null
-                }
-            ])
-            
-            const { data, error } = await supabase
-                .storage
-                .from('uploads')
-                .list('example', {
-                    limit: 100,
-                    offset: 0,
-                    sortBy: { column: 'name', order: 'asc' },
-                })
-
-            if (data) {
-                data.forEach((file, index) => {
-                    if (file.name === '.emptyFolderPlaceholder') return
-
-                    const { data: { publicUrl } } = supabase
-                        .storage
-                        .from('uploads')
-                        .getPublicUrl(`example/${file.name}`)
-
-                    const assetId = addAsset(publicUrl)
-
-                    // Mark some images as analyzed (e.g., every other image)
-                    if (index % 2 === 0) {
-                        // Vary the data slightly based on index to make it look realistic
-                        const variant = (index / 2) % 3;
-                        
-                        let analysisData = {};
-                        
-                        if (variant === 0) {
-                            analysisData = {
-                                "Subject": ["Futuristic City", "Skyscrapers", "Flying Cars"],
-                                "Style": ["Cyberpunk", "Photorealistic", "Unreal Engine 5"],
-                                "Lighting": ["Neon Lights", "Volumetric Fog", "Night"],
-                                "Color": ["Cyan", "Magenta", "Dark Blue"]
-                            };
-                        } else if (variant === 1) {
-                            analysisData = {
-                                "Subject": ["Cybernetic Character", "Street Vendor", "Rainy Street"],
-                                "Style": ["Digital Painting", "Concept Art", "Detailed"],
-                                "Lighting": ["Cinematic", "Rim Lighting", "Moody"],
-                                "Color": ["Purple", "Gold", "Black"]
-                            };
-                        } else {
-                            analysisData = {
-                                "Subject": ["Holographic Signs", "Crowded Market", "Tech Noir"],
-                                "Style": ["Anime Style", "Cel Shaded", "Vibrant"],
-                                "Lighting": ["Soft Glow", "Artificial Light", "Reflections"],
-                                "Color": ["Red", "Green", "Neon Blue"]
-                            };
-                        }
-
-                        updateAssetAnalysis(assetId, analysisData)
-                    }
-                })
-            }
-        } catch (error) {
-            console.error("Error loading example assets:", error)
-        }
-    }
-
-    const handleCreateExampleProject = async () => {
-        setIsLoading(true)
-        try {
-            createProject("Example Project")
-            await loadExampleAssets()
-            router.push("/")
-        } catch (error) {
-            console.error("Error creating example project:", error)
-            setIsLoading(false)
-        }
-    }
 
     const handleLoadProject = (id: string) => {
         loadProject(id)
@@ -322,19 +125,6 @@ export function ProjectDashboard() {
                         </p>
                         <Button className="mt-4" onClick={() => setIsDialogOpen(true)}>
                             Create Project
-                        </Button>
-                        <div className="relative flex py-2 items-center w-full max-w-xs">
-                            <div className="flex-grow border-t border-muted-foreground/20"></div>
-                            <span className="flex-shrink-0 mx-2 text-xs text-muted-foreground">OR</span>
-                            <div className="flex-grow border-t border-muted-foreground/20"></div>
-                        </div>
-                        <Button variant="outline" className="gap-2" onClick={handleCreateExampleProject} disabled={isLoading}>
-                            {isLoading ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Sparkles className="h-4 w-4 text-yellow-500" />
-                            )}
-                            Try Example Project
                         </Button>
                     </div>
                 </div>

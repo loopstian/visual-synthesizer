@@ -22,7 +22,7 @@ import { EditorState, AvailableVariable, VariableSource, JsonNode, Block } from 
 import { useStudioStore } from "@/stores/useStudioStore"
 import { compileString } from "@/utils/promptCompiler"
 import { generateSegment, assembleParagraph, assembleMarkdown } from "@/utils/labGenerator"
-import { MARKDOWN_TEMPLATE_BLOCKS, MOCK_MARKDOWN_PREVIEW, UNIVERSAL_TEMPLATE_BLOCKS, MOCK_UNIVERSAL_PREVIEW } from "./templates"
+
 
 // --- Helpers ---
 
@@ -90,18 +90,8 @@ export function LabWorkspace() {
     const handleLoadTemplate = (template: 'universal' | 'markdown' | 'json') => {
         if (template === 'universal') {
             setLabMode('text')
-            setLabTextBlocks(UNIVERSAL_TEMPLATE_BLOCKS)
-            setAssembledOutput(MOCK_UNIVERSAL_PREVIEW)
-            localStorage.setItem('lab_output_text', MOCK_UNIVERSAL_PREVIEW)
         } else if (template === 'markdown') {
             setLabMode('markdown')
-            // Only load template if blocks are empty or user explicitly requested via this action
-            // Since this is triggered by "Load Template", we should load it.
-            // But we might want to check if it's already populated? 
-            // The user request implies loading mock data.
-            setLabMarkdownBlocks(MARKDOWN_TEMPLATE_BLOCKS)
-            setAssembledOutput(MOCK_MARKDOWN_PREVIEW)
-            localStorage.setItem('lab_output_markdown', MOCK_MARKDOWN_PREVIEW)
         } else if (template === 'json') {
             setLabMode('json')
         }
@@ -125,6 +115,7 @@ export function LabWorkspace() {
     // Load persisted output when mode changes
     React.useEffect(() => {
         if (labMode === 'text' || labMode === 'markdown') {
+            // Load Output
             const key = labMode === 'markdown' ? 'lab_output_markdown' : 'lab_output_text'
             const saved = localStorage.getItem(key)
             if (saved !== null) {
@@ -145,6 +136,8 @@ export function LabWorkspace() {
             localStorage.setItem(key, assembledOutput)
         }
     }, [assembledOutput, labMode])
+
+
 
     const [generatingNodeId, setGeneratingNodeId] = React.useState<string | null>(null)
     const [generatingBlockId, setGeneratingBlockId] = React.useState<string | null>(null)

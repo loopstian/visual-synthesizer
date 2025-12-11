@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { FlaskConical, GripVertical } from "lucide-react"
-
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useStudioStore } from "@/stores/useStudioStore"
